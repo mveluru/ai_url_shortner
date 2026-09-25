@@ -7,6 +7,14 @@ Java 21 · Spring Boot 3.3 · MySQL 8.4 (`utf8mb4_bin` codes) · Redis 7 · Rabb
 `url-shortener-service/src/main/java/com/urlshortener/{shortener,redirect,analytics,common,api,jobs,internal}` · migrations `src/main/resources/db/migration` ·
 tests `src/test` (`*Test` = unit, `*IT` = Docker) · `docs/` · `ops/` · `scripts/verify-design-coverage.py`.
 
+## Run locally (full guide: `README.md` → Setup guide / Starting the application / Manual testing with curl)
+`docker compose up -d` → `./mvnw -pl url-shortener-service spring-boot:run` (default profile `local`; Flyway migrates on startup) → `curl localhost:8080/actuator/health`.
+- **JDK 21 required**; the machine default may be newer — set `JAVA_HOME` before running Maven.
+- **Port 3306 taken?** `MYSQL_PORT=3307 docker compose up -d` **and** export `DB_URL` for the same port (both, or the app cannot reach MySQL).
+- **Check `:8080` before starting** — an instance may already be running (`lsof -iTCP:8080 -sTCP:LISTEN`); drive it with curl instead of starting a second.
+- `/internal/**` (issue/revoke API keys, hard delete) exists only in `local`/`test` (S8). Curl-driven checks must clean up the URLs they create.
+- `prod` profile has no defaults and needs every secret/endpoint from the environment (`ProdSecretsGuard`); actuator moves to `MANAGEMENT_PORT` (8081).
+
 ## Non-negotiable invariants (each cites its design section)
 1. **The redirect path depends only on Redis-or-MySQL** — never on the queue, analytics store or auth (§8.1, F11).
 2. **302, never 301, with `Cache-Control: no-store`** (§6.4).
@@ -34,6 +42,7 @@ Tag every AI-produced change `[generated]`, `[edited]` or `[rejected]` + one-lin
 | auth, SSRF, rate limits | `components/security-auth` |
 | metrics, logs, tracing, alerts | `components/observability` |
 | cross-cutting workflows | `plugins/` |
+| set up, start, or manually exercise the app | `README.md` |
 
 ## Definition of done
 `./mvnw verify` green · `python3 scripts/verify-design-coverage.py` green · `openapi.yaml` and DTOs agree (`OpenApiContractTest`) · design doc and these

@@ -28,6 +28,10 @@ this repository with Claude Code; the engineer reviews and owns every line. Entr
 - [generated] `RedisUrlCache`, `UrlLookupService` (sealed `CacheLookupResult`, stampede guard).
 - [generated] analytics pipeline (publisher, consumer, aggregation, stats) — verified on real RabbitMQ incl. DLQ.
 - [generated] all documentation in `docs/`, `.claude/`, `README.md`.
+- [generated] `README.md` "Manual testing with curl" — every scenario was run against a live instance (create, replay, alias/expiry, redirect, metadata, stats, deactivate, 401/400/403/404/409 cases, dev helpers) and matched the documented statuses.
+- [generated] `README.md` "Setup guide" / "Starting the application" — config table taken from `application.yml`/`application-prod.yml`; local-run steps checked against a running instance, the jar and container steps were not executed.
+- [edited] `docker-compose.yml` MySQL host port → `${MYSQL_PORT:-3306}` — the developer machine already had 3306 in use; default unchanged.
+- [generated] `.claude/CLAUDE.md` "Run locally" — JDK 21 / `MYSQL_PORT`+`DB_URL` / already-running-instance gotchas hit while running the app.
 
 ## Design-doc contradictions surfaced (decisions for the engineer)
 
