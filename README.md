@@ -21,6 +21,8 @@ Prerequisites: JDK 21, Docker.
 
 **Windows, one command:** with Docker Desktop and JDK 21 installed, run `run-local.bat` in the repo root. It starts everything, picks free ports for you and opens Swagger UI. Details: [Windows: one command](#windows-one-command-run-localbat).
 
+**macOS / Linux, one command:** with Docker and JDK 21 installed, run `./run-local.sh` in the repo root ([details](#macos--linux-one-command-run-localsh)).
+
 ```bash
 docker compose up -d                                  # MySQL, Redis, RabbitMQ
 JAVA_HOME=<jdk21> ./mvnw -pl url-shortener-service spring-boot:run   # Flyway migrates on startup
@@ -142,7 +144,25 @@ The last call should return `302` with `Location: https://example.com` and `Cach
 
 **Stop:** press `Ctrl+C` in the `run-local.bat` window, then run `stop-local.bat` (data kept) or `stop-local.bat reset` (also deletes all local data, asks you to type `YES`).
 
-> The two `.bat` files have not yet been run on a real Windows machine, only reviewed and checked against the compose file (limitation L23). If one fails, the message it prints names the step; please report it. macOS and Linux users follow *Local development* below.
+> The two `.bat` files have not yet been run on a real Windows machine, only reviewed and checked against the compose file (limitation L23). If one fails, the message it prints names the step; please report it. macOS and Linux users use `run-local.sh` below.
+
+### macOS / Linux: one command (`run-local.sh`)
+
+Same idea as the Windows script, for bash (works with the bash 3.2 that ships with macOS).
+
+**One-time install:** Docker (Docker Desktop on macOS; Docker Engine with the compose plugin on Linux) and **JDK 21** (`brew install --cask temurin@21` on macOS). The script finds a JDK 21 for you (`/usr/libexec/java_home -v 21`, `/usr/lib/jvm`, sdkman, or `java` on the `PATH`), so you do not need to set `JAVA_HOME` or change your default Java. No Maven, `jq` or database install is needed.
+
+```bash
+git clone https://github.com/mveluru/ai_url_shortner.git
+cd ai_url_shortner
+./run-local.sh              # add --no-open to skip opening Swagger UI in the browser
+```
+
+It does the same steps as `run-local.bat`: checks Docker and JDK 21, reuses this project's running containers or picks free ports, starts MySQL, Redis and RabbitMQ, exports the app configuration, opens Swagger UI once the app is healthy, and runs `./mvnw -pl url-shortener-service spring-boot:run`. **Ports need no manual editing**: if 8080 (or 3306, 6379, 5672, 15672) is busy it uses the next free one and prints the URLs. The first run pulls images and downloads dependencies, so allow a few minutes.
+
+Test it with the commands in [Manual testing with curl](#manual-testing-with-curl) (replace `localhost:8080` with the port the script printed if it differs), or use Swagger UI.
+
+**Stop:** `Ctrl+C` in the script's terminal, then `./stop-local.sh` (data kept) or `./stop-local.sh reset` (also deletes all local data, asks you to type `YES`).
 
 ### Local development (recommended)
 
@@ -490,9 +510,10 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 | L18 | **Single region, single writer.** Multi-region active-active writes are deferred. | A regional outage is a full outage until failover. |
 | L19 | **JDK 21 is the supported toolchain.** The build was verified on 21 only; the machine default JDK (24) was not used. | Build with `JAVA_HOME` set to a JDK 21. |
 | L20 | **Docker is required** for the integration and failure-injection tests (Testcontainers), and takes about 3 minutes. | `./mvnw test` runs the 278 unit tests without it. |
-| L21 | **Outside `run-local.bat`, changing a host port takes several variables** (`MYSQL_PORT` **and** `DB_URL`; `REDIS_PORT`; `RABBIT_PORT`; `SERVER_PORT`). | `run-local.bat` sets them all for you; on macOS/Linux see the Setup guide. |
+| L21 | **Outside `run-local.bat` / `run-local.sh`, changing a host port takes several variables** (`MYSQL_PORT` **and** `DB_URL`; `REDIS_PORT`; `RABBIT_PORT`; `SERVER_PORT`). | the scripts set them all for you; for a manual start see the Setup guide. |
 | L22 | **The container image and jar start-up paths in this README were not executed** in the verification report; only an already-running local instance (built from `target/classes`) and the tests were. | Treat those two sections as unverified until run. |
 | L23 | **`run-local.bat` and `stop-local.bat` have not been executed on Windows** (written and reviewed on macOS). Verified here: the compose port overrides they rely on, the `docker compose port` output they parse, the RabbitMQ readiness command, and that `up` with their computed ports recreates nothing. | Batch syntax, `netstat` port detection and the auto-open of Swagger UI are untested on Windows. macOS/Linux have no equivalent script. |
+| L24 | **`run-local.sh` / `stop-local.sh` were tested on macOS only** (bash 3.2, JDK 21, Docker Desktop, with this project's containers already running and port 8080 busy): port reuse and free-port selection, app start, create + redirect against the new instance, a real Ctrl+C, and the `stop-local.sh` argument and confirmation paths. Not run on Linux, and never against an empty machine (first-time image pull). | The Linux branches (`ss` port detection, JDK search in `/usr/lib/jvm`, `xdg-open`) and a from-scratch first run are untested. |
 
 ### Out of scope (design §1 / §19, `R7`)
 

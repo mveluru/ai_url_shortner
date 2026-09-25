@@ -36,6 +36,8 @@ this repository with Claude Code; the engineer reviews and owns every line. Entr
 - [edited] `docker-compose.yml` Redis/RabbitMQ host ports → `${REDIS_PORT:-6379}`, `${RABBIT_PORT:-5672}`, `${RABBIT_MGMT_PORT:-15672}` — lets the script avoid clashes; the app already reads `REDIS_PORT`/`RABBIT_PORT`, so one variable configures both. Defaults unchanged.
 - [generated] `.gitattributes` (`*.bat`/`*.cmd` → CRLF) — LF-only batch files break labels.
 - [edited] README/`.claude` docs for the Windows flow, with the untested status recorded as limitation L23.
+- [generated] `run-local.sh` / `stop-local.sh` — bash port of the Windows scripts. Run for real on macOS with the project's containers already up and :8080 busy: reused 3307/6379/5672/15672, chose :8081, app healthy, create + redirect OK, real Ctrl+C via a pty exits cleanly, containers untouched. Linux branches and an empty-machine first run not run.
+- [edited] `run-local.sh` — first draft reported a killed JVM / Ctrl+C as `[ERROR] exited with code 1`; now traps INT/TERM and treats an interrupt as a normal stop. Found by running it, not by review.
 - [generated] `.claude/CLAUDE.md` "Run locally" — JDK 21 / `MYSQL_PORT`+`DB_URL` / already-running-instance gotchas hit while running the app.
 
 ## Design-doc contradictions surfaced (decisions for the engineer)
