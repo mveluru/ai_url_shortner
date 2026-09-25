@@ -32,6 +32,10 @@ this repository with Claude Code; the engineer reviews and owns every line. Entr
 - [generated] `README.md` "Setup guide" / "Starting the application" — config table taken from `application.yml`/`application-prod.yml`; local-run steps checked against a running instance, the jar and container steps were not executed.
 - [edited] `docker-compose.yml` MySQL host port → `${MYSQL_PORT:-3306}` — the developer machine already had 3306 in use; default unchanged.
 - [generated] `README.md` "Requirement coverage report" and expanded "Known limitations" — built from a real `./mvnw verify` run (278 unit + 117 IT, 0 failed) and a hand check of each E/F row's test kind; `verify-design-coverage.py` only checks `@Covers` tags. [edited] the README's earlier "~300 / ~90" test counts were wrong and were replaced with the measured numbers.
+- [generated] `run-local.bat` / `stop-local.bat` — one-step Windows start/stop: Docker + JDK 21 checks, reuse-or-free-port selection, env export, auto-open Swagger. **Not executed on Windows** (written on macOS); only the compose overrides, `docker compose port` output format, RabbitMQ readiness command and a `--dry-run up` with the computed ports were checked.
+- [edited] `docker-compose.yml` Redis/RabbitMQ host ports → `${REDIS_PORT:-6379}`, `${RABBIT_PORT:-5672}`, `${RABBIT_MGMT_PORT:-15672}` — lets the script avoid clashes; the app already reads `REDIS_PORT`/`RABBIT_PORT`, so one variable configures both. Defaults unchanged.
+- [generated] `.gitattributes` (`*.bat`/`*.cmd` → CRLF) — LF-only batch files break labels.
+- [edited] README/`.claude` docs for the Windows flow, with the untested status recorded as limitation L23.
 - [generated] `.claude/CLAUDE.md` "Run locally" — JDK 21 / `MYSQL_PORT`+`DB_URL` / already-running-instance gotchas hit while running the app.
 
 ## Design-doc contradictions surfaced (decisions for the engineer)

@@ -19,6 +19,8 @@ Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from 
 
 Prerequisites: JDK 21, Docker.
 
+**Windows, one command:** with Docker Desktop and JDK 21 installed, run `run-local.bat` in the repo root. It starts everything, picks free ports for you and opens Swagger UI. Details: [Windows: one command](#windows-one-command-run-localbat).
+
 ```bash
 docker compose up -d                                  # MySQL, Redis, RabbitMQ
 JAVA_HOME=<jdk21> ./mvnw -pl url-shortener-service spring-boot:run   # Flyway migrates on startup
@@ -88,8 +90,10 @@ With no profile set, the app runs as **`local`**, whose defaults match `docker-c
 | Variable | Default (`local`) | Purpose |
 |---|---|---|
 | `DB_URL` / `DB_USER` / `DB_PASSWORD` | `jdbc:mysql://localhost:3306/urlshortener?…` / `urlshortener` / `urlshortener` | MySQL |
-| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis cache |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis cache. `REDIS_PORT` also sets the port Docker publishes. |
 | `RABBIT_HOST` / `RABBIT_PORT` / `RABBIT_USER` / `RABBIT_PASSWORD` | `localhost` / `5672` / `guest` / `guest` | Click-event queue |
+| `SERVER_PORT` | `8080` | HTTP port of the app (set `PUBLIC_BASE_URL` to match) |
+| `MYSQL_PORT`, `RABBIT_MGMT_PORT` | `3306`, `15672` | Docker compose only: host ports for MySQL and the RabbitMQ UI (`RABBIT_PORT` sets the AMQP port for both compose and the app) |
 | `PUBLIC_BASE_URL` | `http://localhost:8080` | Base of the `shortUrl` returned to clients |
 | `APP_CODE_FEISTEL_KEY`, `APP_IP_HASH_SECRET` | dev-only values | Secrets. **Must** be set in `prod`; `ProdSecretsGuard` refuses the dev values. |
 
@@ -104,6 +108,41 @@ python3 scripts/verify-design-coverage.py       # design coverage check
 ```
 
 ## Starting the application
+
+### Windows: one command (`run-local.bat`)
+
+For someone who has just been sent this repo and wants it running with no manual steps.
+
+**One-time install:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (start it and wait until it says *running*) and **JDK 21** (for example Eclipse Temurin 21). Set `JAVA_HOME` to that JDK if it is not your default Java. Nothing else: no Maven, MySQL, Redis or RabbitMQ install, and no `jq` or bash.
+
+```bat
+git clone https://github.com/mveluru/ai_url_shortner.git
+cd ai_url_shortner
+run-local.bat
+```
+
+What it does, in order: checks Docker and Compose v2, checks that Java is 21 → picks ports → `docker compose up -d --wait` for MySQL, Redis and RabbitMQ → waits for RabbitMQ → sets `DB_URL`, `PUBLIC_BASE_URL` and the port variables for the app → opens Swagger UI once `/actuator/health` responds → runs `mvnw.cmd -pl url-shortener-service spring-boot:run`. The first run pulls Docker images and downloads Maven dependencies, so allow a few minutes. Flyway creates the schema.
+
+**Ports never need to be edited by hand.** The script reuses containers that are already running from this project. For anything else it takes the default (`3306`, `6379`, `5672`, `15672`, `8080`) or the next free port if something on your machine already uses it. It prints the final URLs and ports, so use those. `run-local.bat noopen` skips opening the browser.
+
+**Try it** (Command Prompt, using `curl.exe`, which ships with Windows 10 and later; use the port the script printed if it is not 8080):
+
+1. **Swagger UI**, no tools needed: open `http://localhost:8080/swagger-ui.html`. Get a key with the request below, click **Authorize**, paste the key, then use *Try it out* on `POST /api/v1/urls`.
+2. **Command line:**
+
+```bat
+curl.exe -s -X POST http://localhost:8080/internal/api-keys
+rem copy the value of "apiKey" from the response, then:
+curl.exe -s -X POST http://localhost:8080/api/v1/urls -H "X-API-Key: PASTE_KEY_HERE" -H "Content-Type: application/json" -d "{\"longUrl\":\"https://example.com\"}"
+rem copy the "shortCode" from the response, then:
+curl.exe -i http://localhost:8080/PASTE_CODE_HERE
+```
+
+The last call should return `302` with `Location: https://example.com` and `Cache-Control: no-store`. The full scenario list (aliases, expiry, stats, error cases) is in [Manual testing with curl](#manual-testing-with-curl); those examples are written for bash and `jq`, so on Windows use Git Bash or WSL for them.
+
+**Stop:** press `Ctrl+C` in the `run-local.bat` window, then run `stop-local.bat` (data kept) or `stop-local.bat reset` (also deletes all local data, asks you to type `YES`).
+
+> The two `.bat` files have not yet been run on a real Windows machine, only reviewed and checked against the compose file (limitation L23). If one fails, the message it prints names the step; please report it. macOS and Linux users follow *Local development* below.
 
 ### Local development (recommended)
 
@@ -169,6 +208,9 @@ docker compose down -v         # stop and delete MySQL/Redis/RabbitMQ data (fres
 | `Port 8080 was already in use` | Another instance is running. `lsof -iTCP:8080 -sTCP:LISTEN`, stop it, or start with `SERVER_PORT=8081`. |
 | `Communications link failure` / Hikari timeout to MySQL | MySQL is not healthy yet (`docker compose ps`), or it is on another port: set `DB_URL` (see step 3). |
 | `Access denied` on MySQL | Stale volume from an older run with different credentials: `docker compose down -v` and start again. |
+| `run-local.bat`: `[ERROR] Docker is not installed or not running` | Start Docker Desktop and wait until it reports *running*. |
+| `run-local.bat`: `[ERROR] JDK 21 is required` | The default `java` is another version. Install JDK 21, point `JAVA_HOME` at it, open a **new** terminal. |
+| `run-local.bat` window closes at once | Start it from an open Command Prompt so the message stays visible (it also pauses on errors). |
 | Build fails with a Java or release error | Wrong JDK: `java -version` must show 21; set `JAVA_HOME`. |
 | `/actuator/health` shows `redis` or `rabbit` DOWN | Service not running: `docker compose up -d`. Redirects still work from MySQL, but clicks are not recorded. |
 | `404` on `/internal/api-keys` | Running under `prod`; those helpers exist only in `local`/`test`. |
@@ -448,8 +490,9 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 | L18 | **Single region, single writer.** Multi-region active-active writes are deferred. | A regional outage is a full outage until failover. |
 | L19 | **JDK 21 is the supported toolchain.** The build was verified on 21 only; the machine default JDK (24) was not used. | Build with `JAVA_HOME` set to a JDK 21. |
 | L20 | **Docker is required** for the integration and failure-injection tests (Testcontainers), and takes about 3 minutes. | `./mvnw test` runs the 278 unit tests without it. |
-| L21 | **Port 3306 is fixed unless `MYSQL_PORT` and `DB_URL` are both set.** | See the Setup guide. |
+| L21 | **Outside `run-local.bat`, changing a host port takes several variables** (`MYSQL_PORT` **and** `DB_URL`; `REDIS_PORT`; `RABBIT_PORT`; `SERVER_PORT`). | `run-local.bat` sets them all for you; on macOS/Linux see the Setup guide. |
 | L22 | **The container image and jar start-up paths in this README were not executed** in the verification report; only an already-running local instance (built from `target/classes`) and the tests were. | Treat those two sections as unverified until run. |
+| L23 | **`run-local.bat` and `stop-local.bat` have not been executed on Windows** (written and reviewed on macOS). Verified here: the compose port overrides they rely on, the `docker compose port` output they parse, the RabbitMQ readiness command, and that `up` with their computed ports recreates nothing. | Batch syntax, `netstat` port detection and the auto-open of Swagger UI are untested on Windows. macOS/Linux have no equivalent script. |
 
 ### Out of scope (design §1 / §19, `R7`)
 

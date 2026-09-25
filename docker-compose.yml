@@ -15,10 +15,10 @@ services:
       retries: 20
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["${REDIS_PORT:-6379}:6379"]          # same variable name the app reads, so one export configures both
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
-    ports: ["5672:5672", "15672:15672"]           # 15672 = management UI (guest/guest)
+    ports: ["${RABBIT_PORT:-5672}:5672", "${RABBIT_MGMT_PORT:-15672}:15672"]   # 15672 = management UI (guest/guest); RABBIT_PORT is also read by the app
   prometheus:                                      # optional: docker compose --profile observability up
     image: prom/prometheus:latest
     profiles: ["observability"]
