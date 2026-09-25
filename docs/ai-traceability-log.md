@@ -38,6 +38,8 @@ this repository with Claude Code; the engineer reviews and owns every line. Entr
 - [edited] README/`.claude` docs for the Windows flow, with the untested status recorded as limitation L23.
 - [generated] `run-local.sh` / `stop-local.sh` — bash port of the Windows scripts. Run for real on macOS with the project's containers already up and :8080 busy: reused 3307/6379/5672/15672, chose :8081, app healthy, create + redirect OK, real Ctrl+C via a pty exits cleanly, containers untouched. Linux branches and an empty-machine first run not run.
 - [edited] `run-local.sh` — first draft reported a killed JVM / Ctrl+C as `[ERROR] exited with code 1`; now traps INT/TERM and treats an interrupt as a normal stop. Found by running it, not by review.
+- [generated] `README.md` "Trying the container next to the compose services" — from a real run: image built, `prod` container started (17 s, 3 Flyway migrations), prod-only routes hidden, create/redirect/stats, 401, SSRF 400. The commands are the tested ones (env file replaced by `-e` flags, secrets via `openssl rand`).
+- [edited] ⚠ container trial found the shared-queue pitfall by running it: 4 redirects showed 2 clicks because the local app consumed the rest into the dev schema. Fixed the trial with a separate RabbitMQ vhost + schema, cleaned the 2 stray rows, documented as README L25 and in `.claude/CLAUDE.md`.
 - [generated] `.claude/CLAUDE.md` "Run locally" — JDK 21 / `MYSQL_PORT`+`DB_URL` / already-running-instance gotchas hit while running the app.
 
 ## Design-doc contradictions surfaced (decisions for the engineer)

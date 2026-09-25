@@ -214,6 +214,51 @@ docker run --rm -p 8080:8080 -p 8081:8081 \
 
 The image sets `SPRING_PROFILES_ACTIVE=prod`. The public API is on `8080`; actuator (`/actuator/health`, `/actuator/prometheus`) is on the separate management port `8081` and must not be exposed publicly. From a container, `localhost` is the container itself, so use real hostnames (or `host.docker.internal` for services on your machine). Terminate TLS and set `X-Forwarded-*` at the gateway/load balancer: `prod` uses `forward-headers-strategy: native` so per-IP limits see the real client.
 
+#### Trying the container next to the compose services (local trial)
+
+This was run on macOS (image built, container started, API exercised). It runs the real `prod` profile against the compose MySQL, Redis and RabbitMQ.
+
+```bash
+docker compose up -d
+docker build -t url-shortener .
+
+# 1. Give the container its OWN database schema and RabbitMQ vhost (see the warning below)
+docker compose exec -T mysql mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS urlshortener_docker CHARACTER SET utf8mb4; GRANT ALL ON urlshortener_docker.* TO 'urlshortener'@'%'; FLUSH PRIVILEGES;"
+docker compose exec -T rabbitmq rabbitmqctl add_vhost docker_prod
+docker compose exec -T rabbitmq rabbitmqctl set_permissions -p docker_prod guest '.*' '.*' '.*'
+
+# 2. Run it on the compose network (find its name with `docker network ls`; it is usually <folder>_default).
+#    Host ports 8082/8083 avoid a local app on 8080. Secrets must be >= 32 chars and not start with "dev-only".
+docker run -d --name url-shortener-prod --network <folder>_default -p 8082:8080 -p 8083:8081 \
+  -e DB_URL='jdbc:mysql://mysql:3306/urlshortener_docker?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&connectTimeout=2000&socketTimeout=3000' \
+  -e DB_USER=urlshortener -e DB_PASSWORD=urlshortener \
+  -e REDIS_HOST=redis \
+  -e RABBIT_HOST=rabbitmq -e RABBIT_USER=guest -e RABBIT_PASSWORD=guest -e SPRING_RABBITMQ_VIRTUAL_HOST=docker_prod \
+  -e PUBLIC_BASE_URL=https://localhost:8082 \
+  -e APP_CODE_FEISTEL_KEY=$(openssl rand -hex 24) -e APP_IP_HASH_SECRET=$(openssl rand -hex 24) \
+  url-shortener
+
+docker logs -f url-shortener-prod        # ready at "Started UrlShortenerApplication" (about 17 s)
+curl -s http://localhost:8083/actuator/health          # management port: {"status":"UP",...}
+```
+
+What to expect, and why:
+
+- **`PUBLIC_BASE_URL` must start with `https://`** in `prod` (`ProdSecretsGuard`). There is no TLS locally, so returned `shortUrl` values read `https://localhost:8082/<code>` while the container serves plain HTTP. Open `http://localhost:8082/<code>` instead.
+- **There is no way to issue an API key in `prod`** (`/internal/**` is `local`/`test` only, L17). For a local trial, issue a key on a `local` instance and copy its row: `docker compose exec -T mysql mysql -uroot -proot -e "INSERT INTO urlshortener_docker.api_keys SELECT * FROM urlshortener.api_keys WHERE key_id='<keyId>'"`. The key is hashed with Argon2, so the same key works in both schemas.
+- **Public port `8082`:** `/actuator/**`, `/swagger-ui.html` and `/internal/**` return `404`. Actuator is only on `8083`.
+- **Logs are JSON** (`docker logs url-shortener-prod`).
+
+> **Warning: do not point a second app instance at a different database but the same RabbitMQ vhost.** Click events go through one shared queue (competing consumers). With a local app (database A) and the container (database B) on the same vhost, each consumes about half of *both* apps' clicks and writes them into its own database: in the trial, 4 redirects showed as `totalClicks: 2` on the container and the other 2 appeared in the local app's schema. Instances that serve the same data share a database and a queue; separate environments need separate vhosts (`SPRING_RABBITMQ_VIRTUAL_HOST`) as above.
+
+Clean up:
+
+```bash
+docker rm -f url-shortener-prod
+docker compose exec -T mysql mysql -uroot -proot -e "DROP DATABASE urlshortener_docker"
+docker compose exec -T rabbitmq rabbitmqctl delete_vhost docker_prod
+```
+
 ### Stopping and resetting
 
 ```bash
@@ -450,7 +495,7 @@ Requirements come from design v2.5 (`urldesign/url-shortener-comprehensive-desig
 | Resilience (§8.2) | One breaker per dependency; retry inner, breaker outer; writes never retried | ✅ | `DesignConformanceTest` (9), `FailureInjectionIT` |
 | Observability (§12) | Metrics, alerts (`ops/prometheus-alerts.yml`), structured logs, `requestId` == trace id | ⚠️ | `ObservabilityIT`; OTLP export not wired (L15); alert rules are checked against real metric names, not fired in a running Prometheus |
 | Capacity (§11) | 5,000 rps baseline, scaling axes | ❌ | Assumption only (L1) |
-| Deployment (§13) | Expand/contract migrations, `prod` profile, `Dockerfile` | ⚠️ | `ProdProfileIT`, `MigrationIT`; the image build and run were not executed here (L22) |
+| Deployment (§13) | Expand/contract migrations, `prod` profile, `Dockerfile` | ⚠️ | `ProdProfileIT`, `MigrationIT`; image built and run locally on macOS with the prod profile (startup, prod-only routes hidden, create/redirect/stats, `401`, SSRF `400`); not run in a real deployment (L22) |
 | Test strategy (§17) | Unit, integration, failure-injection | ✅ | 278 + 117 tests |
 | Test strategy (§17) | Load tests | ❌ | Not run (L1) |
 | Test strategy (§17) | Security tests | ⚠️ | SSRF, open-redirect (E5), alias injection ✅; DNS rebinding ❌ |
@@ -511,9 +556,10 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 | L19 | **JDK 21 is the supported toolchain.** The build was verified on 21 only; the machine default JDK (24) was not used. | Build with `JAVA_HOME` set to a JDK 21. |
 | L20 | **Docker is required** for the integration and failure-injection tests (Testcontainers), and takes about 3 minutes. | `./mvnw test` runs the 278 unit tests without it. |
 | L21 | **Outside `run-local.bat` / `run-local.sh`, changing a host port takes several variables** (`MYSQL_PORT` **and** `DB_URL`; `REDIS_PORT`; `RABBIT_PORT`; `SERVER_PORT`). | the scripts set them all for you; for a manual start see the Setup guide. |
-| L22 | **The container image and jar start-up paths in this README were not executed** in the verification report; only an already-running local instance (built from `target/classes`) and the tests were. | Treat those two sections as unverified until run. |
+| L22 | **The jar start-up path in this README was not executed.** The container image **was** built and run (macOS, `prod` profile, against the compose services; see *Trying the container*), but not on Linux/Windows hosts, behind a TLS gateway, or in an orchestrator. | Treat the jar path and any real deployment as unverified until run. |
 | L23 | **`run-local.bat` and `stop-local.bat` have not been executed on Windows** (written and reviewed on macOS). Verified here: the compose port overrides they rely on, the `docker compose port` output they parse, the RabbitMQ readiness command, and that `up` with their computed ports recreates nothing. | Batch syntax, `netstat` port detection and the auto-open of Swagger UI are untested on Windows. macOS/Linux have no equivalent script. |
 | L24 | **`run-local.sh` / `stop-local.sh` were tested on macOS only** (bash 3.2, JDK 21, Docker Desktop, with this project's containers already running and port 8080 busy): port reuse and free-port selection, app start, create + redirect against the new instance, a real Ctrl+C, and the `stop-local.sh` argument and confirmation paths. Not run on Linux, and never against an empty machine (first-time image pull). | The Linux branches (`ss` port detection, JDK search in `/usr/lib/jvm`, `xdg-open`) and a from-scratch first run are untested. |
+| L25 | **Click events use one shared queue per RabbitMQ vhost.** Two instances on the same vhost but different databases split each other's click events between the two databases. | Analytics silently under-count in each database. Give each environment its own vhost; see the warning under *Trying the container*. Nothing in the app detects this misconfiguration. |
 
 ### Out of scope (design §1 / §19, `R7`)
 
