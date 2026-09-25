@@ -8,7 +8,7 @@ Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from 
 |---|---|
 | `urldesign/url-shortener-comprehensive-design.md` | The design (source of truth) |
 | `docs/openapi.yaml` | Wire contract; controller interfaces are generated from it |
-| `postman/url-shortener.postman_collection.json` | Postman collection: 32 requests, 78 assertions (see *Testing with Postman*) |
+| `postman/url-shortener.postman_collection.json` | Postman collection: 71 requests, 165 assertions (see *Testing with Postman*) |
 | `docs/design-verification-report.md` | Design ↔ code cross-check: coverage matrix, contradictions found, limitations |
 | `docs/architecture-diagrams.md` | Mermaid: components, create/redirect/analytics sequences, ER, failure map, topology |
 | `docs/engineering-summary.md` | Plan, three scenarios, risks, assumptions (assignment deliverable) |
@@ -401,18 +401,22 @@ npx newman run postman/url-shortener.postman_collection.json --env-var baseUrl=h
 
 | Folder | What it checks |
 |---|---|
-| 0. Setup | Issues two API keys (`/internal/api-keys`) |
+| 0. Setup | Issues three API keys (`/internal/api-keys`): main, a foreign key for the `403` test, and one for the error cases (see the rate-limit note) |
 | 1. Create | `201` + `Location`; idempotent replay (`200`, `Idempotent-Replay: true`); custom alias + expiry |
 | 2. Redirect | `302`, `Location`, `Cache-Control: no-store` (redirect following is switched off on these requests) |
 | 3. Read | Metadata (`ACTIVE`); stats (waits 3 s for the async pipeline, asserts `totalClicks >= 1`) |
-| 4. Error cases | `401`, `400` (malformed URL, SSRF: loopback, metadata IP, octal host, non-http scheme, reserved alias, bad alias, past expiry, bad range), `409`, `404`, `403`; each asserts the `code`, a `requestId`, and that no exception text leaks |
-| 5. Lifecycle | Deactivate `204`, then `404` for redirect, repeat delete and stats; metadata shows `DEACTIVATED` |
-| 6. Cleanup | Hard-deletes the test URLs and revokes the keys (`/internal/**`) |
+| 4. Positive paths | **4a** accepted inputs at their limits: alias of exactly 3 and exactly 20 characters (mixed case, `_`, `-`), aliases differing only by case, a URL of exactly 2048 characters, a URL with port / encoded characters / query / fragment, plain `http://`. **4b** each of those redirects with the `Location` equal to what was stored, byte for byte. **4c** analytics with real headers: 4 clicks with different `Referer` and `User-Agent` values, then *exact* stats (`totalClicks: 4`, referrers reduced to lowercase hosts with no path or token kept, `mobile`/`desktop`/`other` split, one UTC day bucket), an explicit range that contains the clicks, a past range that is empty (`200`, not an error), and the default 30-day window. **4d** the same URL from another key gets its own code, `HEAD` on a link, a browser `Accept` header, metadata of an alias showing its expiry |
+| 5. Error cases | `401`, `400` (malformed URL, SSRF: loopback, metadata IP, octal host, non-http scheme, reserved alias, bad alias, past expiry, bad range, a URL one character over the 2048 limit), `409`, `404`, `403`; each asserts the `code`, a `requestId`, and that no exception text leaks |
+| 6. Lifecycle | Deactivate `204`, then `404` for redirect, repeat delete and stats; metadata shows `DEACTIVATED` |
+| 7. Cleanup | Hard-deletes every URL the run created and revokes the three keys (`/internal/**`) |
 
 Things to know:
 
 - **Local profile only.** Setup and Cleanup call `/internal/**`, which does not exist under `prod` (S8), so the collection cannot run against the Docker image as it stands (L17, L26).
-- **Stats are eventually consistent**, so that request waits 3 s and asserts a lower bound, not an exact count.
+- **Stats are eventually consistent.** Folder 3 waits 3 s and asserts a lower bound. Folder 4c polls the stats endpoint for up to about 15 s until all 4 clicks are aggregated, then asserts exact numbers. If the consumer is down or very slow that request fails and reports the count it saw.
+- **Create is rate limited per API key (burst 20).** Rejected creates count too, so the error-case requests use a third key; otherwise a single key would hit `429 RATE_LIMITED` mid-run. If you add many more create requests, spread them across keys the same way.
+- **Device classes need `app.features.stats-device-breakdown`**, which is on in the local profile; with it off, the device assertion in 4c fails.
+- **Small timing edge:** the daily-bucket and default-window checks compare against the UTC date at the start of the analytics folder, so a run that straddles UTC midnight can fail once.
 - **It leaves small residue by design:** revoked API-key rows and click-aggregate rows stay in the dev database (design E20). Delete them with SQL if you want a pristine schema.
 - If an assertion fails, the response body's `requestId` is the handle to find the server-side log line.
 
@@ -592,7 +596,7 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 | L23 | **`run-local.bat` and `stop-local.bat` have not been executed on Windows** (written and reviewed on macOS). Verified here: the compose port overrides they rely on, the `docker compose port` output they parse, the RabbitMQ readiness command, and that `up` with their computed ports recreates nothing. | Batch syntax, `netstat` port detection and the auto-open of Swagger UI are untested on Windows. macOS/Linux have no equivalent script. |
 | L24 | **`run-local.sh` / `stop-local.sh` were tested on macOS only** (bash 3.2, JDK 21, Docker Desktop, with this project's containers already running and port 8080 busy): port reuse and free-port selection, app start, create + redirect against the new instance, a real Ctrl+C, and the `stop-local.sh` argument and confirmation paths. Not run on Linux, and never against an empty machine (first-time image pull). | The Linux branches (`ss` port detection, JDK search in `/usr/lib/jvm`, `xdg-open`) and a from-scratch first run are untested. |
 | L25 | **Click events use one shared queue per RabbitMQ vhost.** Two instances on the same vhost but different databases split each other's click events between the two databases. | Analytics silently under-count in each database. Give each environment its own vhost; see the warning under *Trying the container*. Nothing in the app detects this misconfiguration. |
-| L26 | **The Postman collection is a manual/black-box check, not part of `./mvnw verify` or any CI.** Verified with Newman (6.2.2) against a running local app: 32 requests, 78 assertions, passing twice in a row; a deliberately broken copy failed as it should. **Not opened in the Postman desktop app.** It needs the `local` profile (it calls `/internal/**`). | It cannot exercise the `prod` image, and nothing runs it automatically, so it can drift from `docs/openapi.yaml` unless someone runs it. |
+| L26 | **The Postman collection is a manual/black-box check, not part of `./mvnw verify` or any CI.** Verified with Newman (6.2.2) against a running local app: 71 requests, 165 assertions, passing three times in a row (about 5.5 s each); a deliberately broken copy failed as it should. **Not opened in the Postman desktop app.** It needs the `local` profile (it calls `/internal/**`). | It cannot exercise the `prod` image, and nothing runs it automatically, so it can drift from `docs/openapi.yaml` unless someone runs it. |
 
 ### Out of scope (design §1 / §19, `R7`)
 

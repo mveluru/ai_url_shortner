@@ -88,6 +88,38 @@
               ]
             }
           }
+        },
+        {
+          "name": "Issue a third API key (for the error-case creates)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set(\"apiKey3\", b.apiKey);",
+                  "pm.collectionVariables.set(\"keyId3\", b.keyId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "api-keys"
+              ]
+            },
+            "description": "Create is limited to a burst of 20 per API key. The error-case requests each count against the limiter even though they are rejected, so they use this key and keep key 1 under the burst."
+          }
         }
       ]
     },
@@ -448,7 +480,1236 @@
       ]
     },
     {
-      "name": "4. Error cases",
+      "name": "4. Positive paths: accepted inputs, analytics, ranges",
+      "item": [
+        {
+          "name": "4a. Accepted inputs (boundaries and variety)",
+          "item": [
+            {
+              "name": "Alias of exactly 3 characters (minimum length)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// starts with a digit so it can never equal a reserved word; the rest is random per run",
+                      "const a = \"9\" + Math.random().toString(36).slice(2, 4).padEnd(2, \"x\");",
+                      "pm.collectionVariables.set(\"pos3Want\", a);"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"pos3Alias\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"code is 3 chars\", () => pm.expect(b.shortCode).to.have.lengthOf(3));",
+                      "pm.test(\"code is the alias\", () => pm.expect(b.shortCode).to.eql(pm.collectionVariables.get(\"pos3Want\")));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"https://example.com/alias-min\", \"customAlias\": \"{{pos3Want}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Alias of exactly 20 characters (maximum length, mixed case, _ and -)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const a = (\"Pos_\" + pm.collectionVariables.get(\"runId\") + \"-ZzZzZzZzZzZz\").slice(0, 20).padEnd(20, \"Q\");",
+                      "pm.collectionVariables.set(\"pos20Want\", a);"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"pos20Code\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"code is 20 chars\", () => pm.expect(b.shortCode).to.have.lengthOf(20));",
+                      "pm.test(\"code is the alias\", () => pm.expect(b.shortCode).to.eql(pm.collectionVariables.get(\"pos20Want\")));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"https://example.com/alias-max\", \"customAlias\": \"{{pos20Want}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Alias differing only by case: upper",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"caseUpperCode\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"code is the alias, case preserved\", () => pm.expect(b.shortCode).to.eql(\"Cs-\" + pm.collectionVariables.get(\"runId\")));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"https://example.com/case-upper\", \"customAlias\": \"Cs-{{runId}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Alias differing only by case: lower (a different link)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"caseLowerCode\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"code is the alias, case preserved\", () => pm.expect(b.shortCode).to.eql(\"cs-\" + pm.collectionVariables.get(\"runId\")));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"https://example.com/case-lower\", \"customAlias\": \"cs-{{runId}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Short codes are case-sensitive end to end (utf8mb4_bin): this must be 201, not 409."
+              }
+            },
+            {
+              "name": "URL of exactly 2048 characters (maximum length)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const base = \"https://example.com/p/\" + pm.collectionVariables.get(\"runId\") + \"/\";",
+                      "pm.collectionVariables.set(\"longUrl2048\", base + \"a\".repeat(2048 - base.length));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"longCode\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"stored unchanged, 2048 chars\", () => { pm.expect(b.longUrl).to.have.lengthOf(2048); pm.expect(b.longUrl).to.eql(pm.collectionVariables.get(\"longUrl2048\")); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"{{longUrl2048}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "URL with port, encoded characters, query string and fragment",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"complexCode\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"stored unchanged\", () => pm.expect(b.longUrl).to.eql(\"https://example.com:8443/docs/a%20b/file.html?x=1&y=two%20words&z=%E2%9C%93#section-2\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"https://example.com:8443/docs/a%20b/file.html?x=1&y=two%20words&z=%E2%9C%93#section-2\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Plain http:// URL",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"httpCode\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"code is 6 chars\", () => pm.expect(b.shortCode).to.have.lengthOf(6));",
+                      "pm.test(\"stored unchanged\", () => pm.expect(b.longUrl).to.eql(\"http://example.com/plain-http\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"http://example.com/plain-http\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "4b. ...and each one redirects correctly",
+          "item": [
+            {
+              "name": "3-char alias redirects",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location is exactly the long URL that was stored\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com/alias-min\"));",
+                      "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/{{pos3Want}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{pos3Want}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "20-char alias redirects",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location is exactly the long URL that was stored\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com/alias-max\"));",
+                      "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/{{pos20Want}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{pos20Want}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Upper-case alias goes to ITS target",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location is exactly the long URL that was stored\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com/case-upper\"));",
+                      "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/Cs-{{runId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "Cs-{{runId}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Lower-case alias goes to a DIFFERENT target",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location is exactly the long URL that was stored\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com/case-lower\"));",
+                      "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/cs-{{runId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "cs-{{runId}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "2048-char URL redirects, byte for byte",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location is exactly the long URL that was stored\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(pm.collectionVariables.get(\"longUrl2048\")));",
+                      "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/{{longCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{longCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Port/encoding/query/fragment URL redirects, byte for byte",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location is exactly the long URL that was stored\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com:8443/docs/a%20b/file.html?x=1&y=two%20words&z=%E2%9C%93#section-2\"));",
+                      "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/{{complexCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{complexCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "http:// URL redirects",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location is exactly the long URL that was stored\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"http://example.com/plain-http\"));",
+                      "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/{{httpCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{httpCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            }
+          ]
+        },
+        {
+          "name": "4c. Analytics: referrer, device, exact counts, ranges",
+          "item": [
+            {
+              "name": "Create a fresh URL for the analytics checks",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set(\"clickDate\", new Date().toISOString().slice(0, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"analyticsCode\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"https://example.com/analytics/{{runId}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "A dedicated code, so the click counts below are exact."
+              }
+            },
+            {
+              "name": "Click 1: mobile browser, referrer news.example.org (mixed case, path and query)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Referer",
+                    "value": "https://News.Example.org/story?id=1&token=secret"
+                  },
+                  {
+                    "key": "User-Agent",
+                    "value": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/{{analyticsCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{analyticsCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Click 2: desktop browser, same referrer host, different path",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Referer",
+                    "value": "https://news.example.org/other-page"
+                  },
+                  {
+                    "key": "User-Agent",
+                    "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/{{analyticsCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{analyticsCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Click 3: no referrer, command-line client",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "User-Agent",
+                    "value": "curl/8.4.0"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/{{analyticsCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{analyticsCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Click 4: unparseable referrer, crawler",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Referer",
+                    "value": "not a url"
+                  },
+                  {
+                    "key": "User-Agent",
+                    "value": "Googlebot/2.1"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/{{analyticsCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{analyticsCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Stats: exact totals, referrer hosts and device classes",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// Clicks reach the stats through a queue. Poll (up to ~15 s) until all 4 are aggregated, then let the real request run.",
+                      "const base = pm.collectionVariables.get(\"baseUrl\");",
+                      "const opts = { url: base + \"/api/v1/urls/\" + pm.collectionVariables.get(\"analyticsCode\") + \"/stats\", method: \"GET\", header: { \"X-API-Key\": pm.collectionVariables.get(\"apiKey\") } };",
+                      "let tries = 0;",
+                      "(function poll() {",
+                      "  pm.sendRequest(opts, (err, res) => {",
+                      "    if (!err && res.code === 200 && res.json().totalClicks >= 4) return;",
+                      "    if (++tries >= 15) return;",
+                      "    setTimeout(poll, 1000);",
+                      "  });",
+                      "})();"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "const b = pm.response.json();",
+                      "pm.test(\"exactly the 4 clicks made\", () => pm.expect(b.totalClicks).to.eql(4));",
+                      "pm.test(\"referrers reduced to a lowercase host; no path, query or token kept\", () => {",
+                      "  pm.expect(b.topReferrers).to.eql({ \"news.example.org\": 2, \"(direct)\": 1, \"(unknown)\": 1 });",
+                      "  pm.expect(JSON.stringify(b)).to.not.include(\"secret\");",
+                      "});",
+                      "pm.test(\"device classes: 1 mobile, 1 desktop, 2 other (curl, crawler)\", () => pm.expect(b.deviceBreakdown).to.eql({ mobile: 1, desktop: 1, other: 2 }));",
+                      "pm.test(\"one UTC day bucket for today with the same numbers\", () => {",
+                      "  pm.expect(b.daily).to.have.lengthOf(1);",
+                      "  pm.expect(b.daily[0].date).to.eql(pm.collectionVariables.get(\"clickDate\"));",
+                      "  pm.expect(b.daily[0].clicks).to.eql(4);",
+                      "  pm.expect(b.daily[0].topReferrers).to.eql(b.topReferrers);",
+                      "});",
+                      "pm.test(\"freshness is disclosed\", () => pm.expect(new Date(b.updatedAt).getTime()).to.be.above(0));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls/{{analyticsCode}}/stats",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls",
+                    "{{analyticsCode}}",
+                    "stats"
+                  ]
+                },
+                "description": "Needs the local default `app.features.stats-device-breakdown=true`. Polls up to ~15 s for the async pipeline, then asserts exact numbers."
+              }
+            },
+            {
+              "name": "Stats: explicit range that contains the clicks",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const d = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);",
+                      "pm.collectionVariables.set(\"rangeFrom\", d(7));",
+                      "pm.collectionVariables.set(\"rangeTo\", new Date().toISOString().slice(0, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "const b = pm.response.json();",
+                      "pm.test(\"range echoed back\", () => { pm.expect(b.from).to.eql(pm.collectionVariables.get(\"rangeFrom\")); pm.expect(b.to).to.eql(pm.collectionVariables.get(\"rangeTo\")); });",
+                      "pm.test(\"all 4 clicks are inside\", () => pm.expect(b.totalClicks).to.eql(4));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls/{{analyticsCode}}/stats?from={{rangeFrom}}&to={{rangeTo}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls",
+                    "{{analyticsCode}}",
+                    "stats"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "{{rangeFrom}}"
+                    },
+                    {
+                      "key": "to",
+                      "value": "{{rangeTo}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Stats: a valid range in the past with no clicks is empty, not an error",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "const b = pm.response.json();",
+                      "pm.test(\"zero clicks and no buckets\", () => { pm.expect(b.totalClicks).to.eql(0); pm.expect(b.daily).to.be.an(\"array\").that.is.empty; });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls/{{analyticsCode}}/stats?from=2020-01-01&to=2020-01-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls",
+                    "{{analyticsCode}}",
+                    "stats"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2020-01-01"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2020-01-31"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Stats: with no range, the window defaults to the last 30 days (UTC)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "const b = pm.response.json();",
+                      "pm.test(\"to is today; from is 29 days earlier (30 days inclusive)\", () => {",
+                      "  pm.expect(b.to).to.eql(pm.collectionVariables.get(\"clickDate\"));",
+                      "  const days = (new Date(b.to) - new Date(b.from)) / 86400000;",
+                      "  pm.expect(days).to.eql(29);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls/{{analyticsCode}}/stats",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls",
+                    "{{analyticsCode}}",
+                    "stats"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "4d. Other positive variants",
+          "item": [
+            {
+              "name": "Same long URL from a DIFFERENT API key gets its own code (idempotency is per key)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"otherKeyCode\", b.shortCode);",
+                      "pm.test(\"status ACTIVE\", () => pm.expect(b.status).to.eql(\"ACTIVE\"));",
+                      "pm.test(\"not the first key's code\", () => pm.expect(b.shortCode).to.not.eql(pm.collectionVariables.get(\"shortCode\")));",
+                      "pm.test(\"not a replay\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replay\")).to.be.oneOf([undefined, null, \"false\"]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey2}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"longUrl\": \"https://example.com/postman/{{runId}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "HEAD on a short link works like GET (link previews and crawlers)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                      "pm.test(\"Location present\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com/analytics/\" + pm.collectionVariables.get(\"runId\")));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "HEAD",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/{{analyticsCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{analyticsCode}}"
+                  ]
+                }
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Redirect works for a browser Accept header (text/html)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 302\", () => pm.response.to.have.status(302));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "text/html,application/xhtml+xml"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/{{analyticsCode}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "{{analyticsCode}}"
+                  ]
+                },
+                "description": "Unlike the JSON API, the public redirect must not depend on content negotiation."
+              },
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Metadata of the custom alias shows its expiry",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "const b = pm.response.json();",
+                      "pm.test(\"custom, ACTIVE, expiry as set\", () => { pm.expect(b.customAlias).to.eql(true); pm.expect(b.status).to.eql(\"ACTIVE\"); pm.expect(b.expiresAt).to.eql(\"2030-01-01T00:00:00Z\"); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/urls/{{alias}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "urls",
+                    "{{alias}}"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Error cases",
       "item": [
         {
           "name": "401: no API key",
@@ -523,7 +1784,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -576,7 +1837,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -606,6 +1867,70 @@
           }
         },
         {
+          "name": "400: URL of 2049 characters (one over the limit)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const base = \"https://example.com/p/\" + pm.collectionVariables.get(\"runId\") + \"/\";",
+                  "pm.collectionVariables.set(\"longUrl2049\", base + \"a\".repeat(2049 - base.length));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_URL\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_URL\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey3}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"{{longUrl2049}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Pairs with the accepted 2048-character URL in folder 4a: the limit is exact."
+          }
+        },
+        {
           "name": "400: SSRF, cloud metadata address",
           "event": [
             {
@@ -629,7 +1954,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -682,7 +2007,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -736,7 +2061,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -789,7 +2114,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -842,7 +2167,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -895,7 +2220,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -948,7 +2273,7 @@
             "header": [
               {
                 "key": "X-API-Key",
-                "value": "{{apiKey}}"
+                "value": "{{apiKey3}}"
               },
               {
                 "key": "Content-Type",
@@ -1109,7 +2434,7 @@
       ]
     },
     {
-      "name": "5. Deactivate lifecycle",
+      "name": "6. Deactivate lifecycle",
       "item": [
         {
           "name": "Deactivate (DELETE)",
@@ -1305,7 +2630,7 @@
       ]
     },
     {
-      "name": "6. Cleanup (local/test only)",
+      "name": "7. Cleanup (local/test only)",
       "item": [
         {
           "name": "Hard-delete the test short URL",
@@ -1368,6 +2693,267 @@
           }
         },
         {
+          "name": "Hard-delete: 3-char alias URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{pos3Want}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{pos3Want}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: 20-char alias URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{pos20Want}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{pos20Want}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: upper-case alias URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/Cs-{{runId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "Cs-{{runId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: lower-case alias URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/cs-{{runId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "cs-{{runId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: 2048-char URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{longCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{longCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: port/query/fragment URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{complexCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{complexCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: http URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{httpCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{httpCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: analytics URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{analyticsCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{analyticsCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hard-delete: second key's URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{otherKeyCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{otherKeyCode}}"
+              ]
+            }
+          }
+        },
+        {
           "name": "Revoke API key 1",
           "event": [
             {
@@ -1421,6 +3007,35 @@
                 "internal",
                 "api-keys",
                 "{{keyId2}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke API key 3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/api-keys/{{keyId3}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "api-keys",
+                "{{keyId3}}"
               ]
             }
           }
