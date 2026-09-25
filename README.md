@@ -296,13 +296,113 @@ Decisions worth knowing before reading the design:
 ## Testing
 
 ```bash
-./mvnw test        # ~300 unit tests, no Docker
-./mvnw verify      # + ~90 integration & failure-injection tests on REAL MySQL/Redis/RabbitMQ (Docker required)
+./mvnw test        # 278 unit tests, no Docker
+./mvnw verify      # + 117 integration & failure-injection tests on REAL MySQL/Redis/RabbitMQ (Docker required; ~3 min)
 python3 scripts/verify-design-coverage.py    # fails if any E1–E24 / F1–F13 row lacks a test
 ```
 
 A failure-injection test cuts, black-holes or slows a real dependency through Toxiproxy and asserts the *defined* mitigated
 behaviour (e.g. Redis down ⇒ redirects still 302 from MySQL, breaker opens, recovery closes it). Not a mock standing in for a failure.
+
+## Requirement coverage report
+
+Measured on **2026-09-25** against `main` with JDK 21, MySQL 8.4 / Redis 7 / RabbitMQ 3.13 (Testcontainers + Toxiproxy).
+Requirements come from design v2.5 (`urldesign/url-shortener-comprehensive-design.md`): §2.3 (a–f), §7 (E1–E24), §8 (F1–F13), §10, §12, §17.
+
+| Check | Command | Result |
+|---|---|---|
+| Unit tests | `./mvnw test` | **278 run, 0 failed, 0 skipped** |
+| Integration + failure-injection | `./mvnw verify` | **117 run, 0 failed, 0 skipped** (build 3 min 7 s) |
+| Design-row coverage | `python3 scripts/verify-design-coverage.py` | **37 / 37 rows tagged** (36 with tests, F10 infrastructure-only) |
+| Live check | curl walk-through against a running instance (see *Manual testing with curl*) | every documented status matched |
+
+> **How to read "37 / 37":** the script confirms every E/F row has at least one test tagged `@Covers`. It does **not** check that the test passes
+> (the two runs above do), that it is the right *kind* of test (`R5`), or that the requirement is *sufficient*. The "Kind" columns below were checked by hand.
+> Not covered anywhere: see [Known limitations](#not-verified-gaps-in-the-evidence-not-necessarily-in-the-code) L1–L5.
+
+**Legend:** ✅ implemented and tested at the right level · ⚠️ implemented, evidence is partial · ❌ not verified or not built.
+
+### 1. Functional requirements (design §2.3)
+
+| Req | Requirement | Status | Evidence |
+|---|---|---|---|
+| a | Create short codes; optional custom alias and expiry | ✅ | `CreateUrlIT` (16), `AliasValidatorTest`, `ExpiryValidatorTest`; idempotent replay `200` + `Idempotent-Replay` |
+| a | Codes unique, short, hard to guess | ✅ | Counter → keyed Feistel → Base62: `FeistelPermutationTest` (exhaustive bijection), `Base62Test`, `CodeLengthPolicyTest`, `IdAllocationIT`, `CollisionIT` |
+| b | Redirect: `302`, `no-store`, public, depends only on Redis-or-MySQL | ✅ | `RedirectIT` (16), `FailureInjectionIT`; verified live |
+| b | Redirect latency: cache-hit < 50 ms, cache-miss p99 < 150 ms | ❌ | No load test (L1) |
+| c | Clicks recorded asynchronously; never block the redirect | ✅ | `AnalyticsIT` (11), `PublishingTest`, `FailureInjectionIT` F5/F6 |
+| d | Analytics read API (`/stats`, daily UTC buckets, `updatedAt`, `INVALID_RANGE`) | ✅ | `AnalyticsIT`; verified live (4 redirects → `totalClicks: 4`) |
+| e | Defined degradation under cache / DB / queue failure | ✅ | `FailureInjectionIT` (16), `ReplicaFallbackIT`; see section 3 |
+| f | Safe API evolution: versioned, contract-first, `openapi.yaml` ↔ DTOs agree | ✅ | `OpenApiContractTest` (8), `SwaggerIT` (served file byte-identical) |
+| — | Deactivation (`DELETE` → `204`, then `404`) | ✅ | `UrlLifecycleIT`; verified live |
+| — | Management API auth (API key, Argon2, ownership `403`) | ✅ | `AuthIT`; verified live (`401`, `403`) |
+| — | Error taxonomy: 20 codes, one `GlobalExceptionHandler`, `requestId` only | ✅ | `GlobalExceptionHandlerTest` (31, one row per code), `ErrorContractIT` |
+| — | Rate limiting per key / per IP (`429` + `Retry-After`) | ⚠️ | `RateLimitIT`, `IpRateLimitIT`; per-instance only (L7) |
+
+### 2. Edge cases E1–E24 (design §7): 24 / 24 tested, all passing
+
+| Rows | Topic | Tests (unit and integration) |
+|---|---|---|
+| E1–E6 | URL validation: empty, malformed, scheme allowlist, SSRF, self-referential, > 2048 chars | `UrlValidatorTest` (79), `IpClassifierTest` (47), `CreateUrlIT` |
+| E7–E10 | Alias collision, soft-deleted alias, reserved words (case-insensitive), pattern | `AliasValidatorTest` (45), `CreateUrlIT`, `CollisionIT`, `MigrationIT` |
+| E11–E12 | Expiry in the past / absent | `ExpiryValidatorTest`, `CreateUrlIT` |
+| E13 | Concurrent alias race: exactly one `201`, other `409`, decided by the DB constraint | `CreateUrlIT`, `UrlLifecycleIT` (real MySQL) |
+| E14–E16 | Expired / deactivated / never-existed → uniform `404` | `RedirectIT`, `UrlLifecycleIT`, `ExpiryBoundaryTest` |
+| E17 | Code length grows at 80 % of the space | `CodeLengthPolicyTest` |
+| E18 | Illegal path characters → `404` | `RedirectIT` (residual: L12) |
+| E19 | Create spam → `429` | `RateLimitIT`, `RateLimitsTest`, `GlobalExceptionHandlerTest` |
+| E20–E22 | Click after delete, duplicate events (dedup by `event_id`), invalid range | `AnalyticsIT` (real RabbitMQ) |
+| E23 | Double `DELETE` → `204` then `404` | `UrlLifecycleIT` |
+| E24 | Oversized `Referer` / `User-Agent` truncated to 512, never rejected | `AnalyticsIT`, `PublishingTest`, `RedirectIT` |
+
+### 3. Failure modes F1–F13 (design §8)
+
+"Real infra" = fault injected into a real dependency through Toxiproxy or a real container, which is what `R5` requires. A mocked unit test alone does not count.
+
+| Row | Failure | Status | Kind | Tests |
+|---|---|---|---|---|
+| F1 | Redis unreachable → MySQL fallback, breaker opens and recovers | ✅ | Real infra | `FailureInjectionIT`, `RedirectIT`, `FullJitterIntervalFunctionTest` |
+| F2 | Cache/DB desync → invalidate, never update | ✅ | Real infra | `FailureInjectionIT`, `RedirectIT` |
+| F3 | MySQL primary down (refused **and** black-holed) → fast `503`, no write retry | ✅ | Real infra | `FailureInjectionIT`, `ReplicaFallbackIT` |
+| F4 | Primary down, replica up → redirect served from replica | ✅ | Real infra | `FailureInjectionIT`, `ReplicaFallbackIT` |
+| F5 | Queue unreachable → event dropped, redirect unaffected, metric | ✅ | Real infra | `FailureInjectionIT`, `PublishingTest` |
+| F6 | Consumer down / behind → `updatedAt` shows staleness; DLQ | ✅ | Real infra | `FailureInjectionIT`, `AnalyticsIT` |
+| F7 | Cache-miss stampede → single DB read (60 concurrent misses ⇒ ≤ 3) | ⚠️ | Real infra, **functional scale** | `FailureInjectionIT` (4 tests); not load-tested (L1) |
+| F8 | ID-block allocation / contention | ✅ | Real infra | `IdAllocationIT`, `ShortCodeGeneratorTest` |
+| F9 | Short-code collision never overwrites; `500` + metric | ✅ | Real infra | `CollisionIT`, `IdAllocationIT`, `MigrationIT`, `UniqueConstraintTest` |
+| F10 | AZ / region outage | ❌ | Infrastructure only | Documented (L4); app-level half tested under F4 |
+| F11 | Auth store down → redirects unaffected | ✅ | Real infra | `AuthIT`, `FailureInjectionIT` |
+| F12 | Expiry evaluated at read time, not by the sweep | ✅ | Real infra | `RedirectIT`, `ExpiryBoundaryTest` |
+| F13 | Clock skew between instances | ⚠️ | **Unit only** | `ExpiryBoundaryTest`; no multi-node test (L3) |
+
+### 4. Non-functional, security and process requirements
+
+| Area | Requirement | Status | Evidence / gap |
+|---|---|---|---|
+| Security (§10) | SSRF guard before persist, fail closed; private / loopback / link-local / CGNAT / ULA / embedded-IPv4 / ambiguous numeric hosts | ✅ | `UrlValidatorTest`, `IpClassifierTest`; a real bypass (`0177.0.0.1`) was found by test and fixed (V-7) |
+| Security | DNS-rebinding payload; re-validation at redirect time | ❌ | Not tested / not built (L2, L6) |
+| Security | Alias injection and reserved-word bypass | ✅ | `AliasValidatorTest` (45) |
+| Security | No PII, secrets or internals in logs and error bodies | ✅ | `ObservabilityIT` (real log capture), `ErrorContractIT` |
+| Security | `prod` refuses dev secrets; `/internal/**` only in `local`/`test` | ✅ | `ProdSecretsGuardTest`, `ProdProfileIT` |
+| Data (§5, §20.4a) | `utf8mb4_bin` short codes, case-sensitive (`abc` ≠ `ABC`); UTC; Flyway | ✅ | `MigrationIT` (collation asserted), `AnalyticsIT` |
+| Resilience (§8.2) | One breaker per dependency; retry inner, breaker outer; writes never retried | ✅ | `DesignConformanceTest` (9), `FailureInjectionIT` |
+| Observability (§12) | Metrics, alerts (`ops/prometheus-alerts.yml`), structured logs, `requestId` == trace id | ⚠️ | `ObservabilityIT`; OTLP export not wired (L15); alert rules are checked against real metric names, not fired in a running Prometheus |
+| Capacity (§11) | 5,000 rps baseline, scaling axes | ❌ | Assumption only (L1) |
+| Deployment (§13) | Expand/contract migrations, `prod` profile, `Dockerfile` | ⚠️ | `ProdProfileIT`, `MigrationIT`; the image build and run were not executed here (L22) |
+| Test strategy (§17) | Unit, integration, failure-injection | ✅ | 278 + 117 tests |
+| Test strategy (§17) | Load tests | ❌ | Not run (L1) |
+| Test strategy (§17) | Security tests | ⚠️ | SSRF, open-redirect (E5), alias injection ✅; DNS rebinding ❌ |
+| Process (§16, `R2`) | Human sign-off on high-impact paths | ❌ | **Pending** (L5) |
+| Process (§16, `R3`) | AI traceability | ✅ | `docs/ai-traceability-log.md` |
+| Process (§21.4) | Static-analysis / coverage gates, CI | ❌ | Not configured (L16) |
+| Docs (§18, §21) | Setup guide, `.claude/`, diagrams, verification report | ✅ | `README.md`, `.claude/`, `docs/` |
+
+### Summary
+
+- **Fully covered and passing:** every functional requirement except latency, all 24 edge cases, 10 of 13 failure modes fully (F7 and F13 partial, F10 infrastructure), and the security controls that were specified as tests, on real MySQL, Redis and RabbitMQ.
+- **Partially covered:** F7 (functional only), F13 (unit only), observability export, rate limiting (per instance), deployment (image not run).
+- **Not covered:** load and latency targets, DNS rebinding, F10 / DR (infrastructure), CI and static analysis, and the pending human sign-off.
+- **Design questions still open:** V-1 in `docs/design-verification-report.md` (`INVALID_URL` vs `VALIDATION_FAILED` for blank input) needs an explicit engineer decision.
 
 ## Contributing
 
@@ -312,5 +412,45 @@ Read `.claude/CLAUDE.md` first.
 
 ## Known limitations
 
-See `docs/design-verification-report.md` §4. Notably: per-instance rate limits, creation-time-only SSRF check, replica-lag staleness,
-and **no load test has been run** (the 5,000 rps / p99 targets are unverified).
+Detail and rationale: `docs/design-verification-report.md` §4 and design §19 / §20.8. The list below is the complete set, grouped by kind.
+
+### Not verified (gaps in the evidence, not necessarily in the code)
+
+| # | Limitation | Consequence |
+|---|---|---|
+| L1 | **No load test has been run**; there is no load tooling in the repo. | The targets (5,000 rps, cache-hit < 50 ms, cache-miss p99 < 150 ms, stampede and queue-outage behaviour *at volume*) are **unverified**. Stampede (F7) and queue outage (F5) are tested functionally only. |
+| L2 | **No DNS-rebinding test.** Design §17 lists it under security tests. | The SSRF guard is tested with private/loopback/link-local/CGNAT/ULA/embedded-IPv4/ambiguous-numeric hosts, but not with a host that changes its answer between resolutions. See L6. |
+| L3 | **F13 (clock skew) has no multi-node test.** It is covered only by a unit test (`ExpiryBoundaryTest`) that expiry uses one time source; `R5` asks for failure-injection against real infrastructure. | Skew tolerance is by design (DB time, no sub-second expiry) rather than demonstrated. |
+| L4 | **F10 (AZ outage) and §14 (DR) are infrastructure**, not code. Only the app-level half (replica fallback, F4) is tested. | Multi-AZ, replica promotion, backups and canary mechanics are documented, not exercised. |
+| L5 | **Human sign-off (§16 / `R2`) is pending** for the redirect hot path, `SsrfGuard`/`UrlValidator`, `SecurityConfig`, the migrations and the resilience config. | Do not treat this build as approved for production. |
+
+### Behavioural limitations (by design, documented)
+
+| # | Limitation | Consequence |
+|---|---|---|
+| L6 | **SSRF is checked at creation time only.** Redirect targets are not re-validated. | A domain that resolves publicly at creation and is re-pointed at an internal address later is not caught. |
+| L7 | **Rate limits are per instance**, and their values are defaults, not derived from traffic. | The effective global limit scales with the instance count. |
+| L8 | **Replica lag can briefly serve a deactivated link** on a cache miss (F4). | A bounded staleness window on the DB-fallback path. |
+| L9 | **F2: the pending cache-invalidation queue is in memory per instance.** A crash during a Redis outage falls back to the TTL (default 10 min). | A deleted link can keep redirecting for up to the TTL in that case. |
+| L10 | **Click events are dropped during a broker outage (F5, by design).** | Analytics under-count by that amount; redirects are unaffected. Stats are eventually consistent (`updatedAt` shows freshness). |
+| L11 | **Argon2 verification is cached per instance for 30 s.** | A revoked API key can keep working for up to 30 s on an instance that already saw it. |
+| L12 | **Container-level path rejections return `400`, not `404`** (invalid `%` escape, `%2F`; V-12). | Differs from E18 for those inputs. |
+| L13 | **Analytics retention (90 days) is an assumption**, not a stated requirement. | Needs stakeholder confirmation. |
+| L14 | Deactivated custom aliases are never recycled automatically (E8); freeing one needs the dev-only `/internal` hard delete. | There is no production admin path for it yet. |
+
+### Technical and platform limitations
+
+| # | Limitation | Consequence |
+|---|---|---|
+| L15 | **Tracing export (OTLP) is not wired.** Spans and trace ids exist (`requestId` == trace id). | Export is a deployment setting; nothing is shipped to a tracing backend out of the box. |
+| L16 | **No static-analysis or coverage gates** (Checkstyle, SpotBugs, JaCoCo) and **no CI pipeline** (no `.github/`). | The compiler and tests are the only automated gates, and they run only if someone runs them. |
+| L17 | **`/internal/**` and Swagger UI exist only in `local`/`test`** (S8, §22.4). | There is no production way to issue API keys yet; that needs an admin/key-management path. |
+| L18 | **Single region, single writer.** Multi-region active-active writes are deferred. | A regional outage is a full outage until failover. |
+| L19 | **JDK 21 is the supported toolchain.** The build was verified on 21 only; the machine default JDK (24) was not used. | Build with `JAVA_HOME` set to a JDK 21. |
+| L20 | **Docker is required** for the integration and failure-injection tests (Testcontainers), and takes about 3 minutes. | `./mvnw test` runs the 278 unit tests without it. |
+| L21 | **Port 3306 is fixed unless `MYSQL_PORT` and `DB_URL` are both set.** | See the Setup guide. |
+| L22 | **The container image and jar start-up paths in this README were not executed** in the verification report; only an already-running local instance (built from `target/classes`) and the tests were. | Treat those two sections as unverified until run. |
+
+### Out of scope (design §1 / §19, `R7`)
+
+Multi-tenant user accounts / OAuth, multi-region active-active writes, bulk import, link-in-bio / landing pages, malware / phishing scanning (extension point only). Not built, and not to be added silently.

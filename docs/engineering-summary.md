@@ -6,7 +6,7 @@ Order actually followed: contract/schema → code generation → validation/SSRF
 observability → Swagger → failure injection → docs/tooling. Each step ended with a passing build before the next began.
 
 ## Artifacts
-Working prototype (`url-shortener-service/`), OpenAPI contract, Flyway schema, ~300 unit + ~90 integration/failure-injection tests,
+Working prototype (`url-shortener-service/`), OpenAPI contract, Flyway schema, 278 unit + 117 integration/failure-injection tests (all passing, 2026-09-25),
 Prometheus alerts, docker-compose, Dockerfile, architecture diagrams, verification report, traceability log, `.claude/` tooling.
 
 ## The three required scenarios (mapped to this repository)

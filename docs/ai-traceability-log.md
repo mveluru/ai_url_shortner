@@ -31,6 +31,7 @@ this repository with Claude Code; the engineer reviews and owns every line. Entr
 - [generated] `README.md` "Manual testing with curl" — every scenario was run against a live instance (create, replay, alias/expiry, redirect, metadata, stats, deactivate, 401/400/403/404/409 cases, dev helpers) and matched the documented statuses.
 - [generated] `README.md` "Setup guide" / "Starting the application" — config table taken from `application.yml`/`application-prod.yml`; local-run steps checked against a running instance, the jar and container steps were not executed.
 - [edited] `docker-compose.yml` MySQL host port → `${MYSQL_PORT:-3306}` — the developer machine already had 3306 in use; default unchanged.
+- [generated] `README.md` "Requirement coverage report" and expanded "Known limitations" — built from a real `./mvnw verify` run (278 unit + 117 IT, 0 failed) and a hand check of each E/F row's test kind; `verify-design-coverage.py` only checks `@Covers` tags. [edited] the README's earlier "~300 / ~90" test counts were wrong and were replaced with the measured numbers.
 - [generated] `.claude/CLAUDE.md` "Run locally" — JDK 21 / `MYSQL_PORT`+`DB_URL` / already-running-instance gotchas hit while running the app.
 
 ## Design-doc contradictions surfaced (decisions for the engineer)
