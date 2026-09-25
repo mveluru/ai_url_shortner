@@ -1,0 +1,1431 @@
+{
+  "info": {
+    "name": "URL Shortener",
+    "description": "End-to-end checks for the URL Shortener API (docs/openapi.yaml). Run the whole collection in order (Runner, or `newman run`): it issues its own API keys, exercises every endpoint and error case, and cleans up. Needs the app running in the `local` profile (`./run-local.sh` or `run-local.bat`). Change the `baseUrl` collection variable if the app is not on http://localhost:8080.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "Issue API key",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// unique per run so the collection can be re-run and is safe against the 24 h idempotency window",
+                  "pm.collectionVariables.set(\"runId\", Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"key returned once\", () => { pm.expect(b.apiKey).to.be.a(\"string\").and.not.empty; pm.expect(b.keyId).to.be.a(\"string\"); });",
+                  "pm.collectionVariables.set(\"apiKey\", b.apiKey);",
+                  "pm.collectionVariables.set(\"keyId\", b.keyId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "api-keys"
+              ]
+            },
+            "description": "local/test profiles only (404 under prod). Saves apiKey and keyId as collection variables."
+          }
+        },
+        {
+          "name": "Issue a second API key (for the 403 test)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set(\"apiKey2\", b.apiKey);",
+                  "pm.collectionVariables.set(\"keyId2\", b.keyId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "api-keys"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Create",
+      "item": [
+        {
+          "name": "Create short URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Location header points at the resource\", () => pm.expect(pm.response.headers.get(\"Location\")).to.include(\"/api/v1/urls/\" + b.shortCode));",
+                  "pm.test(\"body\", () => { pm.expect(b.status).to.eql(\"ACTIVE\"); pm.expect(b.customAlias).to.eql(false); pm.expect(b.expiresAt).to.eql(null); });",
+                  "pm.collectionVariables.set(\"shortCode\", b.shortCode);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.com/postman/{{runId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create again: idempotent replay",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Idempotent-Replay: true\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replay\")).to.eql(\"true\"));",
+                  "pm.test(\"same short code as the first call\", () => pm.expect(pm.response.json().shortCode).to.eql(pm.collectionVariables.get(\"shortCode\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.com/postman/{{runId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Same (API key, longUrl) within 24 h returns the original with 200 instead of creating a duplicate."
+          }
+        },
+        {
+          "name": "Create with custom alias and expiry",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"alias\", \"pm-\" + pm.collectionVariables.get(\"runId\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"alias is the code and marked custom\", () => { pm.expect(b.shortCode).to.eql(pm.collectionVariables.get(\"alias\")); pm.expect(b.customAlias).to.eql(true); });",
+                  "pm.test(\"expiresAt echoed\", () => pm.expect(b.expiresAt).to.eql(\"2030-01-01T00:00:00Z\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.com/promo\", \"customAlias\": \"{{alias}}\", \"expiresAt\": \"2030-01-01T00:00:00Z\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Redirect",
+      "item": [
+        {
+          "name": "Redirect (302, not followed)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                  "pm.test(\"Location is the long URL\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com/postman/\" + pm.collectionVariables.get(\"runId\")));",
+                  "pm.test(\"Cache-Control: no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{shortCode}}"
+              ]
+            },
+            "description": "Public, no API key. This request has 'Automatically follow redirects' off so the 302 itself is visible."
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Redirect again (more clicks for stats)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 302\", () => pm.response.to.have.status(302));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{shortCode}}"
+              ]
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Redirect the custom alias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 302\", () => pm.response.to.have.status(302));",
+                  "pm.test(\"goes to the promo URL\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"https://example.com/promo\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/{{alias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{alias}}"
+              ]
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Read metadata and stats",
+      "item": [
+        {
+          "name": "Get metadata",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"ACTIVE with the long URL\", () => { pm.expect(b.status).to.eql(\"ACTIVE\"); pm.expect(b.longUrl).to.include(\"/postman/\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get click stats",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// clicks are counted asynchronously through the queue: wait a little before reading",
+                  "setTimeout(function () {}, 3000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"counts the redirects (eventually consistent)\", () => pm.expect(b.totalClicks).to.be.at.least(1));",
+                  "pm.test(\"freshness and buckets present\", () => { pm.expect(b.updatedAt).to.be.a(\"string\"); pm.expect(b.daily).to.be.an(\"array\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}",
+                "stats"
+              ]
+            },
+            "description": "Eventually consistent: the pre-request script waits 3 s. totalClicks is asserted as >= 1, not an exact number."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Error cases",
+      "item": [
+        {
+          "name": "401: no API key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"error code is UNAUTHORIZED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHORIZED\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.com\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: malformed URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_URL\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_URL\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"not a url\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: SSRF, loopback address",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_URL\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_URL\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"http://127.0.0.1:8080/admin\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: SSRF, cloud metadata address",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_URL\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_URL\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"http://169.254.169.254/latest/meta-data\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: SSRF, octal-looking host",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_URL\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_URL\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"http://0177.0.0.1/\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Ambiguous numeric host: the JDK reads it as decimal, browsers as octal 127.0.0.1. Rejected (design V-7)."
+          }
+        },
+        {
+          "name": "400: non-http scheme",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_URL\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_URL\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"javascript:alert(1)\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: reserved alias (case-insensitive)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is ALIAS_RESERVED\", () => pm.expect(pm.response.json().code).to.eql(\"ALIAS_RESERVED\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.com\", \"customAlias\": \"Admin\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: invalid alias pattern",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_ALIAS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_ALIAS\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.com\", \"customAlias\": \"-bad-\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: expiry in the past",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_EXPIRY\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_EXPIRY\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.com\", \"expiresAt\": \"2001-01-01T00:00:00Z\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "409: alias already taken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"error code is ALIAS_TAKEN\", () => pm.expect(pm.response.json().code).to.eql(\"ALIAS_TAKEN\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"longUrl\": \"https://example.org/other\", \"customAlias\": \"{{alias}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "400: stats range from > to",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error code is INVALID_RANGE\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_RANGE\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}/stats?from=2026-09-30&to=2026-09-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}",
+                "stats"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-09-30"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-09-01"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "404: unknown short code (public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error code is NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"NOT_FOUND\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/doesNotExist{{runId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "doesNotExist{{runId}}"
+              ]
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "403: a code owned by a different API key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"error code is FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey2}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Deactivate lifecycle",
+      "item": [
+        {
+          "name": "Deactivate (DELETE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Redirect after deactivate: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error code is NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"NOT_FOUND\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{shortCode}}"
+              ]
+            },
+            "description": "Deactivated, expired and never-existed codes all return the same 404 on the public surface."
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Deactivate again: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error code is NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"NOT_FOUND\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Metadata after deactivate shows DEACTIVATED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status DEACTIVATED\", () => pm.expect(pm.response.json().status).to.eql(\"DEACTIVATED\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stats after deactivate: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error code is NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"NOT_FOUND\"));",
+                  "pm.test(\"body carries requestId and no internals\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.requestId).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(JSON.stringify(b)).to.not.match(/Exception|at com\\.|\\.java/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/urls/{{shortCode}}/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls",
+                "{{shortCode}}",
+                "stats"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Cleanup (local/test only)",
+      "item": [
+        {
+          "name": "Hard-delete the test short URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{shortCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{shortCode}}"
+              ]
+            },
+            "description": "local/test only. Frees the row. (Click aggregates are kept by design, E20.)"
+          }
+        },
+        {
+          "name": "Hard-delete the custom-alias URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/urls/{{alias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "urls",
+                "{{alias}}"
+              ]
+            },
+            "description": "Frees the alias for the next run."
+          }
+        },
+        {
+          "name": "Revoke API key 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/api-keys/{{keyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "api-keys",
+                "{{keyId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke API key 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/api-keys/{{keyId2}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "api-keys",
+                "{{keyId2}}"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,7 @@ Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from 
 |---|---|
 | `urldesign/url-shortener-comprehensive-design.md` | The design (source of truth) |
 | `docs/openapi.yaml` | Wire contract; controller interfaces are generated from it |
+| `postman/url-shortener.postman_collection.json` | Postman collection: 32 requests, 78 assertions (see *Testing with Postman*) |
 | `docs/design-verification-report.md` | Design ↔ code cross-check: coverage matrix, contradictions found, limitations |
 | `docs/architecture-diagrams.md` | Mermaid: components, create/redirect/analytics sequences, ER, failure map, topology |
 | `docs/engineering-summary.md` | Plan, three scenarios, risks, assumptions (assignment deliverable) |
@@ -385,6 +386,36 @@ curl -i -X DELETE $BASE/internal/urls/$CODE            # hard delete; frees a so
 curl -s $BASE/actuator/prometheus | grep -E '^(http_server_requests|resilience4j_circuitbreaker)' | head
 ```
 
+## Testing with Postman
+
+`postman/url-shortener.postman_collection.json` exercises every endpoint and error case end to end. It issues its own API keys, creates what it needs, asserts on the responses and cleans up after itself, so it can be re-run at any time.
+
+**In Postman:** *Import* the file, open the collection, and use **Run** (Runner) to execute it in order. Start the app first with `./run-local.sh` or `run-local.bat`. If the app is not on port 8080, change the `baseUrl` variable on the collection's **Variables** tab. Nothing else needs configuring: `apiKey`, `shortCode` and the rest are collection variables the requests set for each other.
+
+**From the command line** (Node 18+; nothing is installed into the repo):
+
+```bash
+npx newman run postman/url-shortener.postman_collection.json
+npx newman run postman/url-shortener.postman_collection.json --env-var baseUrl=http://localhost:8081   # another port
+```
+
+| Folder | What it checks |
+|---|---|
+| 0. Setup | Issues two API keys (`/internal/api-keys`) |
+| 1. Create | `201` + `Location`; idempotent replay (`200`, `Idempotent-Replay: true`); custom alias + expiry |
+| 2. Redirect | `302`, `Location`, `Cache-Control: no-store` (redirect following is switched off on these requests) |
+| 3. Read | Metadata (`ACTIVE`); stats (waits 3 s for the async pipeline, asserts `totalClicks >= 1`) |
+| 4. Error cases | `401`, `400` (malformed URL, SSRF: loopback, metadata IP, octal host, non-http scheme, reserved alias, bad alias, past expiry, bad range), `409`, `404`, `403`; each asserts the `code`, a `requestId`, and that no exception text leaks |
+| 5. Lifecycle | Deactivate `204`, then `404` for redirect, repeat delete and stats; metadata shows `DEACTIVATED` |
+| 6. Cleanup | Hard-deletes the test URLs and revokes the keys (`/internal/**`) |
+
+Things to know:
+
+- **Local profile only.** Setup and Cleanup call `/internal/**`, which does not exist under `prod` (S8), so the collection cannot run against the Docker image as it stands (L17, L26).
+- **Stats are eventually consistent**, so that request waits 3 s and asserts a lower bound, not an exact count.
+- **It leaves small residue by design:** revoked API-key rows and click-aggregate rows stay in the dev database (design E20). Delete them with SQL if you want a pristine schema.
+- If an assertion fails, the response body's `requestId` is the handle to find the server-side log line.
+
 ## Architecture at a glance
 
 ```
@@ -406,6 +437,7 @@ Decisions worth knowing before reading the design:
 ./mvnw test        # 278 unit tests, no Docker
 ./mvnw verify      # + 117 integration & failure-injection tests on REAL MySQL/Redis/RabbitMQ (Docker required; ~3 min)
 python3 scripts/verify-design-coverage.py    # fails if any E1–E24 / F1–F13 row lacks a test
+npx newman run postman/url-shortener.postman_collection.json    # black-box API check against a running local app
 ```
 
 A failure-injection test cuts, black-holes or slows a real dependency through Toxiproxy and asserts the *defined* mitigated
@@ -560,6 +592,7 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 | L23 | **`run-local.bat` and `stop-local.bat` have not been executed on Windows** (written and reviewed on macOS). Verified here: the compose port overrides they rely on, the `docker compose port` output they parse, the RabbitMQ readiness command, and that `up` with their computed ports recreates nothing. | Batch syntax, `netstat` port detection and the auto-open of Swagger UI are untested on Windows. macOS/Linux have no equivalent script. |
 | L24 | **`run-local.sh` / `stop-local.sh` were tested on macOS only** (bash 3.2, JDK 21, Docker Desktop, with this project's containers already running and port 8080 busy): port reuse and free-port selection, app start, create + redirect against the new instance, a real Ctrl+C, and the `stop-local.sh` argument and confirmation paths. Not run on Linux, and never against an empty machine (first-time image pull). | The Linux branches (`ss` port detection, JDK search in `/usr/lib/jvm`, `xdg-open`) and a from-scratch first run are untested. |
 | L25 | **Click events use one shared queue per RabbitMQ vhost.** Two instances on the same vhost but different databases split each other's click events between the two databases. | Analytics silently under-count in each database. Give each environment its own vhost; see the warning under *Trying the container*. Nothing in the app detects this misconfiguration. |
+| L26 | **The Postman collection is a manual/black-box check, not part of `./mvnw verify` or any CI.** Verified with Newman (6.2.2) against a running local app: 32 requests, 78 assertions, passing twice in a row; a deliberately broken copy failed as it should. **Not opened in the Postman desktop app.** It needs the `local` profile (it calls `/internal/**`). | It cannot exercise the `prod` image, and nothing runs it automatically, so it can drift from `docs/openapi.yaml` unless someone runs it. |
 
 ### Out of scope (design §1 / §19, `R7`)
 

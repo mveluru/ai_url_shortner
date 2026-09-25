@@ -40,6 +40,7 @@ this repository with Claude Code; the engineer reviews and owns every line. Entr
 - [edited] `run-local.sh` — first draft reported a killed JVM / Ctrl+C as `[ERROR] exited with code 1`; now traps INT/TERM and treats an interrupt as a normal stop. Found by running it, not by review.
 - [generated] `README.md` "Trying the container next to the compose services" — from a real run: image built, `prod` container started (17 s, 3 Flyway migrations), prod-only routes hidden, create/redirect/stats, 401, SSRF 400. The commands are the tested ones (env file replaced by `-e` flags, secrets via `openssl rand`).
 - [edited] ⚠ container trial found the shared-queue pitfall by running it: 4 redirects showed 2 clicks because the local app consumed the rest into the dev schema. Fixed the trial with a separate RabbitMQ vhost + schema, cleaned the 2 stray rows, documented as README L25 and in `.claude/CLAUDE.md`.
+- [generated] `postman/url-shortener.postman_collection.json` — 32 requests / 78 assertions covering every endpoint and error case. Run with Newman against the local app: passes twice; a mutated copy (wrong Cache-Control, wrong error code) failed as required (R6). Not opened in the Postman desktop app. Test rows left in the dev schema were removed afterwards.
 - [generated] `.claude/CLAUDE.md` "Run locally" — JDK 21 / `MYSQL_PORT`+`DB_URL` / already-running-instance gotchas hit while running the app.
 
 ## Design-doc contradictions surfaced (decisions for the engineer)
