@@ -1,0 +1,183 @@
+# Default profile == local development (docker-compose.yml). Production overrides live in application-prod.yml.
+spring:
+  application:
+    name: url-shortener
+  profiles:
+    default: local             # with no active profile, run as local (enables the dev-only /internal endpoints)
+  threads:
+    virtual:
+      enabled: true            # section 20.3: redirect path is dominated by blocking I/O
+  mvc:
+    # Section 20.4: BOTH are required for NO_HANDLER to reach the @RestControllerAdvice with a requestId.
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+  jackson:
+    time-zone: UTC             # strict scalar typing is configured in JacksonConfig (MapperFeature cannot do it)
+  datasource:
+    # Section 5.1 timezone note: the UTC convention is set once, here, not left to each session default.
+    # socketTimeout bounds a black-holed primary (F3): all queries here are single-row key lookups, so 3s is generous.
+    url: ${DB_URL:jdbc:mysql://localhost:3306/urlshortener?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&connectTimeout=2000&socketTimeout=3000}
+    username: ${DB_USER:urlshortener}
+    password: ${DB_PASSWORD:urlshortener}
+    hikari:
+      maximum-pool-size: 20
+      connection-timeout: 2000   # fail fast when the primary is unreachable (F3) instead of hanging the request
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate         # Flyway owns the schema (section 13 expand/contract)
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+        type.preferred_instant_jdbc_type: TIMESTAMP
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 200ms             # command timeout: the redirect latency budget has no room for a slow cache
+      connect-timeout: 200ms
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USER:guest}
+    password: ${RABBIT_PASSWORD:guest}
+    connection-timeout: 250ms
+    listener:
+      simple:
+        acknowledge-mode: manual # ack only after the aggregation write commits (section 20.1)
+        prefetch: 50
+        default-requeue-rejected: true
+  security:
+    user:
+      name: disabled-unused    # API-key auth only; suppresses the generated default password
+      password: ${random.uuid}
+
+server:
+  port: 8080
+  shutdown: graceful
+  max-http-request-header-size: 64KB   # E24: an oversized Referer/User-Agent must not break the redirect
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}   # set to "native" behind the gateway/LB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+      group:
+        # Redis / RabbitMQ being down degrades the service but must NOT pull instances out of rotation (section 8.1):
+        # the redirect path keeps serving via the DB fallback.
+        readiness:
+          include: readinessState,db
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+resilience4j:
+  circuitbreaker:
+    circuitBreakerAspectOrder: 1      # OUTER: retry only happens while the breaker permits the call (section 8.2)
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        failure-rate-threshold: 50
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: false
+        ignore-exceptions:            # business outcomes are not dependency failures: never trip a breaker on them
+          - org.springframework.dao.DataIntegrityViolationException
+          - org.springframework.dao.OptimisticLockingFailureException
+          - com.urlshortener.common.error.UrlShortenerException
+    instances:
+      redis-cache:                    # F1
+        base-config: default
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 5s
+        permitted-number-of-calls-in-half-open-state: 3
+      mysql-read:                     # F4
+        base-config: default
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+      mysql-write:                    # F3 (lower volume than the read path)
+        base-config: default
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 2
+      mq-publish:                     # F5
+        base-config: default
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 5s
+        permitted-number-of-calls-in-half-open-state: 3
+      auth-lookup:                    # F11
+        base-config: default
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  retry:
+    retryAspectOrder: 2               # INNER (section 8.2). The full-jitter interval comes from ResilienceConfig.
+    configs:
+      default:
+        retry-exceptions:
+          - org.springframework.dao.DataAccessException
+          - org.springframework.transaction.TransactionException
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+        ignore-exceptions:
+          - org.springframework.dao.DataIntegrityViolationException
+          - org.springframework.dao.OptimisticLockingFailureException
+          - com.urlshortener.common.error.UrlShortenerException
+    instances:
+      redis-cache:   { base-config: default, max-attempts: 2 }   # 1 retry
+      mysql-read:    { base-config: default, max-attempts: 3 }   # 2 retries
+      mysql-write:   { base-config: default, max-attempts: 2 }   # 1 retry, idempotent-safe reads ONLY (section 8.2.3)
+      auth-lookup:   { base-config: default, max-attempts: 2 }   # 1 retry
+      # mq-publish: deliberately no retry instance - 0 retries, a retry would trade redirect latency for a best-effort signal
+
+app:
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
+  self-hosts: short.ly
+  code:
+    feistel-key: ${APP_CODE_FEISTEL_KEY:dev-only-feistel-key-change-me-in-prod}
+  analytics:
+    ip-hash-secret: ${APP_IP_HASH_SECRET:dev-only-ip-hash-secret-change-me}
+  rate-limit:
+    create-per-key: { requests-per-minute: 100, burst: 20 }
+    redirect-per-ip: { requests-per-minute: 1000, burst: 200 }
+    api-per-ip: { requests-per-minute: 600, burst: 100 }
+  # Section 8.2.1 full-jitter bounds: delay = random(0, min(cap, base * 2^attempt))
+  retry-backoff:
+    redis-cache: { base: 10ms, cap: 50ms }
+    mysql-read: { base: 25ms, cap: 200ms }
+    mysql-write: { base: 25ms, cap: 200ms }
+    auth-lookup: { base: 20ms, cap: 100ms }
+
+# Section 22.3. Swagger UI serves the checked-in contract (OpenApiContractController at /v3/api-docs.yaml), not a spec
+# springdoc generates. springdoc's own generator cannot be switched off without also switching off the UI, so its
+# document is relocated away from the contract path and blocked in SecurityConfig; only the UI's config endpoint
+# (/v3/generated-api-docs/swagger-config) stays reachable. See docs/design-verification-report.md, finding V-11.
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/generated-api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    url: /v3/api-docs.yaml
+    disable-swagger-default-url: true
+  packages-to-scan: none

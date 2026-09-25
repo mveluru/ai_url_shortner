@@ -1,0 +1,46 @@
+# Production overrides. Every secret and endpoint is REQUIRED from the environment with no default: a missing value fails
+# startup (fail closed) instead of silently running with a development credential. See ProdSecretsGuard.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBIT_HOST}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USER}
+    password: ${RABBIT_PASSWORD}
+
+server:
+  forward-headers-strategy: native     # behind the gateway/LB: per-IP limits and ip_hash must see the real client
+
+app:
+  public-base-url: ${PUBLIC_BASE_URL}
+  code:
+    feistel-key: ${APP_CODE_FEISTEL_KEY}
+  analytics:
+    ip-hash-secret: ${APP_IP_HASH_SECRET}
+  # A read replica for the redirect fallback (design doc F4) is enabled by setting APP_DATASOURCE_REPLICA_URL in the environment.
+
+# Section 22.4: the API explorer is not served off the production API surface. The machine-readable contract is published
+# from docs/openapi.yaml via the documentation site instead.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}      # actuator is NOT exposed on the public port
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never

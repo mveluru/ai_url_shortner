@@ -1,0 +1,88 @@
+# Minimum alert set from design doc section 12.4. Every application metric referenced here is verified to be exported by
+# ObservabilityIT.alertRulesReferenceRealMetrics, so a renamed metric breaks the build instead of silently silencing an alert.
+# Thresholds are starting points (design doc section 19): tune them against real telemetry after launch.
+groups:
+  - name: url-shortener-redirect
+    rules:
+      - alert: RedirectP99LatencyHigh
+        # Section 1/2.3 targets: sub-150ms p99 on the cache-miss path, sub-50ms on a hit.
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(redirect_latency_ms_bucket{result="found"}[5m]))) > 150
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Redirect p99 latency above the 150ms SLA"
+          runbook: ".claude/plugins/incident-response.md (start with F1/F4/F7)"
+
+      - alert: CircuitBreakerOpen
+        # Every named breaker alerts independently (section 8.2.2): redis-cache, mysql-read, mysql-write, mq-publish, auth-lookup.
+        expr: cache_circuit_breaker_state == 2
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Circuit breaker {{ $labels.name }} has been OPEN for 5 minutes"
+          runbook: "F1 (redis-cache), F3/F4 (mysql-*), F5 (mq-publish), F11 (auth-lookup)"
+
+      - alert: RetryExhaustionRising
+        # The leading indicator: retries failing usually precedes a breaker opening, so this fires EARLIER (section 12.4).
+        expr: |
+          sum by (name) (rate(resilience4j_retry_calls_total{kind=~"failed_with_retry|failed_without_retry"}[5m])) > 0.2
+        for: 2m
+        labels: { severity: warn }
+        annotations:
+          summary: "Retries against {{ $labels.name }} are being exhausted; a breaker is likely to trip"
+
+      - alert: ServerErrorRateHigh
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 1) > 0.01
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "More than 1% of requests are failing with 5xx"
+
+  - name: url-shortener-integrity
+    rules:
+      - alert: ShortCodeCollision
+        # F9: an auto-generated code collided with another auto-generated code. Impossible by design, so it is a
+        # data-integrity bug to page on, never a normal-path event.
+        expr: increase(short_code_collision_total[5m]) > 0
+        labels: { severity: page }
+        annotations:
+          summary: "F9: auto-generated short-code collision (data-integrity incident)"
+
+      - alert: CacheInvalidationBacklog
+        # F2: a deleted/deactivated link may still be redirecting from Redis until this backlog drains.
+        expr: cache_invalidation_pending > 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Cache invalidations are failing; deactivated links may still redirect"
+
+  - name: url-shortener-analytics
+    rules:
+      - alert: ClickQueueBacklog
+        # F6: alert well BEFORE the 72h retention window is at risk (section 8, F6).
+        expr: queue_depth > 100000
+        for: 10m
+        labels: { severity: warn }
+        annotations:
+          summary: "Click-event backlog is growing; analytics are stale (see stats.updatedAt)"
+
+      - alert: ClickEventsBeingDropped
+        # F5: dropping is the designed behaviour during a queue outage, so this is a warning, not a page.
+        expr: sum(rate(click_publish_failed_total[5m])) > 1
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "Click events are being dropped (queue unreachable or saturated)"
+
+  - name: url-shortener-database
+    rules:
+      - alert: MySqlReplicaLagHigh
+        # External metric (mysqld_exporter). Replica lag is accepted for the redirect fallback (F4) but must stay bounded.
+        expr: mysql_slave_status_seconds_behind_source > 30
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: "MySQL replica lag above 30s"

@@ -1,0 +1,19 @@
+# Reserved custom-alias words (design doc section 4.3). One per line, compared case-insensitively.
+# Maintained as data so it can be extended without a code change; app.alias.additional-reserved-words adds more.
+# Route prefixes and operational paths that must never be shadowed by a short code:
+api
+admin
+health
+metrics
+static
+favicon.ico
+robots.txt
+actuator
+swagger-ui
+swagger-ui.html
+v3
+v1
+internal
+error
+login
+logout

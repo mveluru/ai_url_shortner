@@ -1,0 +1,373 @@
+openapi: 3.0.3
+info:
+  title: URL Shortener API
+  version: 1.0.0
+  description: |
+    Contract for the URL Shortener service (design doc §6, §9, §22). This file is the single source of
+    truth for the wire contract: controller interfaces are generated from it (§20.6) and the Swagger UI
+    serves it byte-for-byte (§22).
+
+    * The management API is versioned by URI path (`/api/v1/...`) and requires `X-API-Key`.
+    * The redirect endpoint `GET /{shortCode}` is public and permanently unversioned (§6.1).
+    * Every error uses the `ErrorResponse` shape (§9.1); `requestId` correlates to server logs/traces.
+    * Clients must retry `429`, `500`, `503`, `504` with exponential backoff and jitter (§9.4).
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: urls
+    description: Short-URL management (API key required)
+  - name: redirect
+    description: Public link resolution (unauthenticated, unversioned)
+paths:
+  /api/v1/urls:
+    post:
+      tags: [urls]
+      operationId: createUrl
+      summary: Create a short URL
+      description: |
+        Creates a short code for `longUrl`. Re-submitting the same `(apiKey, longUrl)` pair within 24h
+        returns the existing resource with `200` and `Idempotent-Replay: true` (§6.3); the first request's
+        `customAlias`/`expiresAt` win. A custom-alias request is never treated as a duplicate of an
+        auto-generated code for the same URL (and vice versa).
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUrlRequest'
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: Relative URL of the created resource
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrlResource'
+        '200':
+          description: Idempotent replay of an existing resource
+          headers:
+            Idempotent-Replay:
+              description: Always `true` on this response
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrlResource'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '406': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '415': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+  /api/v1/urls/{shortCode}:
+    parameters:
+      - $ref: '#/components/parameters/ShortCode'
+    get:
+      tags: [urls]
+      operationId: getUrl
+      summary: Retrieve short-URL metadata
+      description: |
+        Returns metadata including `status` (`ACTIVE`, `EXPIRED`, `DEACTIVATED`). This authenticated endpoint is
+        the only place the *reason* a link stopped working is disclosed (§7 E14 rationale).
+        A code owned by a different API key returns `403`.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrlResource'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [urls]
+      operationId: deactivateUrl
+      summary: Deactivate a short URL
+      description: |
+        Soft-deletes the code. The alias is not recycled automatically (§7 E8). A second call returns `404`
+        because the resource is already inactive (§7 E23).
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '204':
+          description: Deactivated
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+  /api/v1/urls/{shortCode}/stats:
+    parameters:
+      - $ref: '#/components/parameters/ShortCode'
+    get:
+      tags: [urls]
+      operationId: getUrlStats
+      summary: Click analytics for a short URL
+      description: |
+        Daily-bucketed (UTC) analytics. Eventually consistent: `updatedAt` is the last successful aggregation
+        run, so clients can tell "zero clicks" from "aggregation has not caught up" (§6.5). Stats for a
+        deactivated code return `404` (§7 E20). Retention is 90 days.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Inclusive start date (UTC). Defaults to 29 days before `to`.
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          description: Inclusive end date (UTC). Defaults to today.
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UrlStats'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+  /{shortCode}:
+    get:
+      tags: [redirect]
+      operationId: redirect
+      summary: Redirect to the original URL
+      description: |
+        Public and unauthenticated. Responds `302 Found` (deliberately not `301`, §6.4) with
+        `Cache-Control: no-store`. Unknown, expired, deactivated, or malformed codes all return the same
+        `404 NOT_FOUND` so the public surface does not leak a code's lifetime (§7 E14-E16, E18).
+        The click event is published asynchronously and never delays or fails the redirect (§8.1).
+      security: []
+      parameters:
+        - name: shortCode
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '302':
+          description: Found
+          headers:
+            Location:
+              description: The original long URL
+              schema: { type: string }
+            Cache-Control:
+              description: Always `no-store`
+              schema: { type: string }
+        '404':
+          description: Not found, expired, or deactivated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Per-IP rate limit exceeded
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Neither Redis nor the database could serve the lookup
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: A dependency exceeded its timeout
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Opaque API key. Stored hashed (Argon2) server-side; rotate by issuing a new key and revoking the old one.
+  parameters:
+    ShortCode:
+      name: shortCode
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid request (`VALIDATION_FAILED`, `INVALID_URL`, `INVALID_ALIAS`, `ALIAS_RESERVED`, `INVALID_EXPIRY`, `INVALID_RANGE`, `MALFORMED_JSON`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid API key (`UNAUTHORIZED`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Key is valid but does not own the resource (`FORBIDDEN`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Code does not exist or is not usable (`NOT_FOUND`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: '`ALIAS_TAKEN` or `RESOURCE_MODIFIED`'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RateLimited:
+      description: Rate limit exceeded (`RATE_LIMITED`)
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Error:
+      description: Error (see `ErrorResponse.code`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    CreateUrlRequest:
+      type: object
+      required: [longUrl]
+      properties:
+        longUrl:
+          type: string
+          maxLength: 2048
+          description: Absolute `http`/`https` URL. Must not resolve to a private/loopback/link-local address or point at this service's own domain.
+          example: https://example.com/some/long/path?with=query
+        customAlias:
+          type: string
+          minLength: 3
+          maxLength: 20
+          pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{2,19}$'
+          description: Optional case-sensitive alias. Reserved words are rejected.
+          example: my-launch
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiry (UTC, must be in the future). Absent means never expires.
+    UrlResource:
+      type: object
+      required: [shortCode, shortUrl, longUrl, customAlias, status, createdAt]
+      properties:
+        shortCode: { type: string, example: aZ3kP1 }
+        shortUrl: { type: string, example: 'http://localhost:8080/aZ3kP1' }
+        longUrl: { type: string }
+        customAlias: { type: boolean }
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, DEACTIVATED]
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+    UrlStats:
+      type: object
+      required: [shortCode, from, to, totalClicks, topReferrers, deviceBreakdown, daily]
+      properties:
+        shortCode: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        totalClicks: { type: integer, format: int64 }
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last successful aggregation run. `null` if no aggregation has run yet.
+        topReferrers:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+        deviceBreakdown:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+        daily:
+          type: array
+          items: { $ref: '#/components/schemas/DailyStats' }
+    DailyStats:
+      type: object
+      required: [date, clicks, topReferrers, deviceBreakdown]
+      properties:
+        date: { type: string, format: date }
+        clicks: { type: integer, format: int64 }
+        topReferrers:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+        deviceBreakdown:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+    ErrorResponse:
+      type: object
+      required: [code, message, requestId, timestamp, path]
+      properties:
+        code:
+          type: string
+          enum:
+            - VALIDATION_FAILED
+            - INVALID_URL
+            - INVALID_ALIAS
+            - ALIAS_RESERVED
+            - INVALID_EXPIRY
+            - INVALID_RANGE
+            - MALFORMED_JSON
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - NO_HANDLER
+            - METHOD_NOT_ALLOWED
+            - NOT_ACCEPTABLE
+            - ALIAS_TAKEN
+            - RESOURCE_MODIFIED
+            - UNSUPPORTED_MEDIA_TYPE
+            - RATE_LIMITED
+            - INTERNAL_ERROR
+            - SERVICE_UNAVAILABLE
+            - UPSTREAM_TIMEOUT
+        message: { type: string }
+        requestId: { type: string }
+        timestamp: { type: string, format: date-time }
+        path: { type: string }
+        fieldErrors:
+          type: array
+          nullable: true
+          description: Populated only for `VALIDATION_FAILED`
+          items: { $ref: '#/components/schemas/FieldError' }
+    FieldError:
+      type: object
+      required: [field, constraint, message]
+      properties:
+        field: { type: string }
+        rejectedValue:
+          nullable: true
+          description: The offending value, if safe to echo
+        constraint: { type: string, example: NotBlank }
+        message: { type: string }

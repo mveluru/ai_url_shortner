@@ -1,0 +1,16 @@
+app:
+  rate-limit:
+    # Every test calls from 127.0.0.1, so the shared per-IP limits are effectively disabled here. Rate-limit tests
+    # (RateLimitIT) run in their own context with real values. create-per-key is left at the design default.
+    api-per-ip: { requests-per-minute: 6000000, burst: 1000000 }
+    redirect-per-ip: { requests-per-minute: 6000000, burst: 1000000 }
+  expiry-sweep:
+    enabled: true         # the bean exists so tests can call run() deterministically...
+    interval: 24h         # ...while the scheduled run stays out of the way
+  cache:
+    lock-wait: 300ms
+logging:
+  level:
+    com.urlshortener: INFO
+    org.springframework.amqp: WARN
+    com.zaxxer.hikari: WARN
