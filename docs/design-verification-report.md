@@ -27,7 +27,7 @@ How this was checked (mechanically, not by reading):
 | §12 metrics/logging/tracing/alerts | Micrometer, `logback-spring.xml`, `ops/prometheus-alerts.yml` | `ObservabilityIT` (names exist; alert metrics are real; logs leak nothing) |
 | §13 deploy/rollback, feature flags, expand/contract | profiles, `features.stats-device-breakdown`, Flyway, `Dockerfile` | `ProdProfileIT`; process items documented in `.claude/plugins/release-checklist.md` |
 | §14 DR | topology only | docs (`architecture-diagrams.md`) — not code |
-| §15/§16 scenarios, AI traceability | `docs/engineering-summary.md`, `docs/ai-traceability-log.md` | documents |
+| §15/§16 scenarios, AI traceability | Design §15 *As built* blocks; `package-info.java` in `redirect`, `shortener`, `analytics`; `docs/engineering-summary.md`; `docs/ai-traceability-log.md` | documents; see V-20 for what the plan text claims that the repository does not evidence |
 | §17 test strategy | test tree | unit / IT / failure-injection / security tests all present |
 | §18 setup | `docker-compose.yml`, `mvnw`, `/internal/api-keys` (local/test only) | `README.md` steps executed in `ProdProfileIT`/ITs |
 | §20 stack mapping | `pom.xml`, generator, Testcontainers | build |
@@ -59,6 +59,7 @@ Infrastructure-only (no code to test): **F10** multi-AZ / replica promotion, **�
 | V-17 | §20.1 typo "Lettoce"; §5.1 `version` "DEFAULT 1". | Hibernate seeds `@Version` at 0. | Cosmetic; DB default retained. |
 | V-18 | F1 "stops paying the connection-timeout tax". | Lettuce queues commands while disconnected and reconnects with up-to-30 s backoff. | `REJECT_COMMANDS` + reconnect delay capped at 2 s (`RedisConfig`). |
 | V-19 | F3 "fail fast". | A **black-holed** primary is only detected by the JDBC socket timeout (was 10 s). | Default `socketTimeout=3000`; both "refused" and "black-hole" outages are tested. |
+| V-20 | §15.1–15.3 describe validation and process steps: a stampede load test, an analytics-vs-redirect load test, a "reconciliation test" against raw click events, an added migration rollback script, and an engineer-corrected first-draft cache-miss race. | **None of these is evidenced in the repository.** No load tests were run (L1 in the README). Raw events are deliberately not retained (§5.2), so reconciliation against them is impossible as written. Migrations `V1`–`V3` are expand-only with no rollback script. The traceability log has no entry for the race. (The guard, the alias regex and the queue-based design that these steps refer to *are* implemented and tested.) | §15 keeps the plan text and adds an **As built in this repository** block per scenario (decomposition → what delivered it, execution, validation as run, what was not done); §19 gains the load-test limitation; the three scenario packages carry the same account as Javadoc (`package-info.java`). **Engineer decision needed:** supply the missing evidence or state it happened outside this repository, or downgrade the plan text. |
 
 ## 3. Interpretations / additions the design did not specify
 

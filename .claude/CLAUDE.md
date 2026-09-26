@@ -47,6 +47,7 @@ Tag every AI-produced change `[generated]`, `[edited]` or `[rejected]` + one-lin
 | auth, SSRF, rate limits | `components/security-auth` |
 | metrics, logs, tracing, alerts | `components/observability` |
 | cross-cutting workflows | `plugins/` |
+| the three scenarios (greenfield / brownfield / ambiguous): decomposition, execution, validation | design §15 *As built*; `package-info.java` in `redirect`, `shortener`, `analytics` |
 | black-box API check (Postman/Newman) | `postman/url-shortener.postman_collection.json` |
 | set up, start, or manually exercise the app | `README.md`, `run-local.{bat,sh}`, `stop-local.{bat,sh}` |
 

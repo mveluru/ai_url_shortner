@@ -16,6 +16,8 @@ Prometheus alerts, docker-compose, Dockerfile, architecture diagrams, verificati
 | **Brownfield — custom aliases on create** | impacted: request schema, unique constraint, validators, reserved list, **idempotency** (an alias request must not be a duplicate of an auto code). `AliasValidator`, `IdempotencyKey` (kind). Validated by regression of the auto flow + E7–E10/E13 tests. *Note: implemented together with the base create flow in this build, not as a separate retrofit; the impact analysis is what the scenario contributed.* |
 | **Ambiguous — "add analytics"** | clarified into: click + referrer + coarse device, daily UTC buckets, eventually consistent, 90-day retention (assumption). Queue-based, never inline. Validated by `AnalyticsIT` (convergence, dedup, DLQ) and `FailureInjectionIT.f5/f6`. |
 
+**Where the full account is.** For each scenario, design §15 has an **As built in this repository** block (decomposition → what delivered it, execution, validation as run, and what was *not* done), and the packages `com.urlshortener.redirect`, `.shortener` and `.analytics` carry the same summary as Javadoc (`package-info.java`). Two things the plan text in §15 describes are not in this repository: load tests (none were run) and a migration rollback script; a raw-event reconciliation test is impossible as written because raw events are not retained. See V-20 in `docs/design-verification-report.md`.
+
 ## Risks / trade-offs / validation
 See `docs/design-verification-report.md` §2 (design contradictions) and §4 (limitations). Highest residual risks: no load test run;
 replica-lag staleness window; per-instance rate limits.

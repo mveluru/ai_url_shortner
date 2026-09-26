@@ -1,6 +1,6 @@
 # URL Shortener — Comprehensive End-to-End Design Document
 
-**Document version:** 2.6
+**Document version:** 2.7
 **Last updated:** 2026-09-25
 **Status:** Implementation-ready
 **Target runtime:** Java 21 (LTS), Spring Boot 3.3+
@@ -20,6 +20,7 @@
 | 2.4 | 2026-09-25 | Added §8.2: circuit breaker + retry-with-jitter policy — per-dependency Resilience4j config table (Redis, MySQL read/write, queue publish, auth lookup), full-jitter rationale, the circuit-breaker state machine, and the idempotency-gates-every-retry safety rule; extended §12.1/§12.4 with retry-specific metrics and alerts; extended §20.1's Resilience4j mapping to cover `@Retry` alongside `@CircuitBreaker` |
 | 2.6 | 2026-09-25 | Implementation cross-verification: added §23 recording the contradictions found between sections and how the implementation resolved them (idempotency fingerprint, id allocation, `INVALID_*` vs `VALIDATION_FAILED`, SSRF octal bypass, springdoc path collision, replica routing, and others). Full detail: `docs/design-verification-report.md` |
 | 2.5 | 2026-09-25 | Added §22: Swagger/OpenAPI UI implementation — `springdoc-openapi` serving the actual `docs/openapi.yaml` as a static resource (not annotation-generated, to avoid a second source of truth), per-environment exposure/security, "Try it out" API-key wiring via the spec's existing security scheme, Maven build-time packaging, a CI check asserting the served doc matches the repo file byte-for-byte, and a forward-looking versioned-UI (groups) plan for when `v2` ships |
+| 2.7 | 2026-09-25 | §15: added an **As built in this repository** block to each of the three scenarios (decomposition → what delivered it, execution, validation as run, and what was *not* done), with a reading note. Recorded in §23 / V-20 that the plan text describes load tests, a raw-event reconciliation test and a migration rollback script that the repository does not contain. No guarantee changed; §19 gains one limitation (load tests not run).
 
 ---
 
@@ -572,11 +573,37 @@ Every field in every request is validated against the schema in `openapi.yaml` (
 
 ## 15. Three Required Scenarios
 
+> **How to read this section.** The bullets directly under each scenario are the design-stage plan and the process as reported. Each scenario also has an **As built in this repository** block recording only what the repository evidences (files, tests, traceability-log entries) and stating plainly what the plan called for but has not been done. Where the two differ, the *as built* block is authoritative; the differences are logged as V-20 in §23 and `docs/design-verification-report.md`. Tests are named so they can be found with `grep`; the coverage script `scripts/verify-design-coverage.py` ties the E/F rows to them.
+
 ### 15.1 Greenfield — building the redirect service from scratch
 
 - **Decomposition:** API contract → data model → cache-aside read path → failure-mode handling (F1, F7) → error handling → tests.
 - **AI-assisted execution:** AI scaffolded the service boilerplate and the initial cache-aside logic. The engineer reviewed and corrected a cache-miss race condition in AI's first draft — concurrent misses on the same key both hit the DB and both wrote to cache — resolved with the `SET NX PX` lock guard now documented as F7.
 - **Validation:** unit tests for hit/miss/expired/not-found; load test specifically simulating the cache-miss stampede scenario to confirm the guard works under concurrency.
+
+#### As built in this repository
+
+**Decomposition → what delivered each step**
+
+| Step | Delivered as |
+|---|---|
+| API contract | `GET /{shortCode}` in `docs/openapi.yaml` (unversioned, rule A2) → generated `RedirectApi`, implemented by `RedirectController` |
+| Data model | `V1__urls.sql`: `short_code VARCHAR(20)` with `utf8mb4_bin` and `uk_urls_short_code` (case-sensitive; the database decides uniqueness) |
+| Cache-aside read path | `UrlLookupService.resolve` → `RedisUrlCache`. A miss reads MySQL through `UrlReader` and repopulates Redis; the entry TTL is capped at time-to-expiry; a corrupt entry is treated as a miss and repaired. Outcomes are the sealed `CacheLookupResult` |
+| F1, Redis unreachable | Breaker `redis-cache` with one jittered retry inside it; `REJECT_COMMANDS` and a 2 s reconnect cap so a dead Redis costs nothing per request (V-18); the request is served from MySQL |
+| F7, stampede | Per-key Redis lock (`SET NX PX`, 30 s TTL). Losers wait a bounded time, are served a stale copy when one exists, or read MySQL themselves |
+| Error handling | One uniform `404` for unknown, expired, deactivated and malformed codes (E14–E16, E18). Expiry is evaluated at read time (F12), never trusted to the TTL or the sweep |
+
+**Execution** (as recorded in `docs/ai-traceability-log.md`). `[generated]` `RedisUrlCache` and `UrlLookupService` (sealed `CacheLookupResult`, stampede guard), accepted after review. Defects found by *running* the code and then fixed: a lost cache invalidation while Redis is down (V-10, now retried by `BestEffortCache`) and Lettuce queuing commands while disconnected (V-18). The plan above mentions an AI-drafted cache-miss race that the engineer corrected; that episode is **not** in the traceability log, so it is not claimed here. The guard it describes exists and is tested (below). This is the redirect hot path: every change to it needs explicit engineer sign-off (§16, rule `R2`). **Sign-off is pending.**
+
+**Validation as run** (`./mvnw verify`, real MySQL, Redis and RabbitMQ; Redis faults injected with Toxiproxy):
+
+- `RedirectIT` (16 tests): `302` never `301` with `Cache-Control: no-store`; unknown / expired / deactivated / malformed codes; cache-aside miss then hit; an entry never outlives the link's expiry; a corrupt entry acts as a miss; case-sensitive codes; `HEAD`; oversized headers do not break the redirect.
+- `FailureInjectionIT`, F1: with Redis cut, and separately with Redis connected but silent (black-holed), redirects still return `302` from MySQL within the timeout budget, the `redis-cache` breaker opens, and recovery closes it and repopulates. The retry sits inside the breaker, which counts one failure per call, not per attempt. F2: a `DELETE` while Redis is down still succeeds (the database is the truth) and the failed invalidation is retried until Redis is back; `RedirectIT` shows a `DELETE` invalidates the entry and its stale copy.
+- `FailureInjectionIT`, F7 (4 tests): 60 simultaneous requests for one uncached code all return `302` with at most 3 MySQL reads; a stale copy is served with zero MySQL reads while another instance holds the lock; a lock holder that never finishes cannot hang requests (they wait under 3 s, not the 30 s lock TTL, then read MySQL); waiters pick up the value the lock holder populates.
+- Live: `curl` and the Postman/Newman collection (`302`, `Location`, `no-store`, `404` after deactivation).
+
+**Not done.** The load test the plan calls for (stampede at target QPS). The F7 tests use 60 concurrent requests, which shows the guard coalesces reads, not what throughput or p99 latency it achieves; the §2.3 latency targets are unverified (README limitation L1).
 
 ### 15.2 Brownfield — adding custom aliases to an existing create endpoint
 
@@ -584,11 +611,60 @@ Every field in every request is validated against the schema in `openapi.yaml` (
 - **AI-assisted execution:** AI proposed the alias-validation regex and the DB migration. The engineer tightened the regex (AI's version allowed a leading hyphen, which broke path parsing downstream) and added the missing migration rollback script, which AI's draft omitted.
 - **Validation:** regression tests on the existing auto-generated flow; new tests for E7–E10, E13 from the edge case catalog.
 
+#### As built in this repository
+
+**Codebase reasoning → what each impacted area became**
+
+| Impacted area | Delivered as |
+|---|---|
+| Request schema | Optional `customAlias` and `expiresAt` on the create request in `docs/openapi.yaml`; optional request fields are a non-breaking change (rule A3), so `/api/v1` stays |
+| Uniqueness | `uk_urls_short_code` is the sole arbiter (E7, E13). The violated constraint's *name* says which rule fired (`UniqueConstraint`). Aliases and generated codes share one namespace; an alias that equals a future generated code makes the generator skip to the next id (V-5) |
+| Validation layer | `AliasValidator`: `[A-Za-z0-9][A-Za-z0-9_-]{2,19}` (3–20 characters, the first alphanumeric, so a leading hyphen is refused). The reserved-word check runs first and is case-insensitive (`ReservedAliases`, `reserved-aliases.txt`). `ExpiryValidator` for `expiresAt` |
+| Reserved-word blocklist | `reserved-aliases.txt`, matched case-insensitively so `Admin` cannot bypass `admin` |
+| Idempotency | `IdempotencyKey` fingerprint = SHA-256(owner, **kind**, url) with kind ∈ {auto, custom}, stored in the unique nullable `idempotency_fingerprint`. A custom-alias request is therefore never a duplicate of an auto-generated code for the same `longUrl` (V-2, V-3) |
+
+**Execution.** Alias support was written together with the base create flow in this build; it was **not** retrofitted onto a pre-existing endpoint (`docs/engineering-summary.md` says the same). What the scenario contributed is the impact analysis above, which is why the idempotency interaction was designed up front (and the two design contradictions it exposed, V-2 and V-3, were resolved before code) instead of discovered later. The leading-hyphen rule is enforced in code and tested, but the traceability log does not record it as a discrete `[edited]` step. The plan says a missing migration rollback script was added: **no rollback script exists** in the repository. `V1`–`V3` are expand-only; the policy relied on is expand/contract (§13, rule `R2` for any migration), under which the previous application version keeps working against the newer schema.
+
+**Validation as run:**
+
+- New cases: `CreateUrlIT` covers E7 (created case-sensitively; a second use is `409 ALIAS_TAKEN`; a different case is free), E8 (a deactivated alias is still `409`, never recycled), E9 / E10 (reserved words, bad charset, length, leading hyphen), E11 / E12 (expiry), and E13 (many simultaneous requests for one alias produce exactly one `201`, decided by the DB constraint). `AliasValidatorTest` (45 cases), `UniqueConstraintTest`, `CollisionIT`, `IdAllocationIT` and `MigrationIT` cover the rule and the constraint against real MySQL.
+- Idempotency interaction: `CreateUrlIT` proves a custom alias is not a duplicate of an auto code (and the reverse), replay is per API key, a retry with a different alias returns the original, and a deactivated link can be shortened again.
+- Auto-generated flow: its tests (`201` with a 6-character Base62 code, codes unique across many creations, replay, uniqueness under concurrency) run in the same suite as the alias tests and pass together. `OpenApiContractTest` checks the spec and the DTOs still agree.
+- Live: the Postman collection creates aliases of exactly 3 and 20 characters and two aliases that differ only by case, and checks each redirects to its own target.
+
+**Not done.** There is no separate before/after regression run (the two flows were built together, so "regression" here means the auto-flow tests passing alongside the alias tests), and no migration rollback script.
+
 ### 15.3 Ambiguous — "add analytics"
 
 - **Requirement clarification:** no granularity, retention, or consistency model was specified in the original ask. Normalized into: click count + referrer + coarse device breakdown, daily aggregation, eventually consistent, 90-day retention (documented assumption, flagged for stakeholder confirmation — see §19).
 - **AI-assisted execution:** AI drafted the aggregation job and the query API. The engineer rejected AI's initial suggestion to aggregate synchronously inline in the redirect path — this directly violates the "redirect never blocks on analytics" reliability requirement (§8.1) — and redirected the design to the queue-based async approach now documented in §3 and F5/F6.
 - **Validation:** isolated load test confirming redirect latency is unaffected by analytics/queue load; reconciliation test confirming aggregate counts match raw click-event counts within the expected lag window (accounting for F6's dedup-by-`event_id`).
+
+#### As built in this repository
+
+**Requirement clarification → decision → where it lives**
+
+| Ambiguity in "add analytics" | Decision | Where |
+|---|---|---|
+| What is counted | Click count, referrer, coarse device | `ClickEventFactory` builds the event on the redirect path |
+| Referrer detail | Host only, lowercased; `(direct)` when absent, `(unknown)` when unparseable. Paths and queries can carry tokens, so they are dropped | `ReferrerNormalizer` |
+| Device detail | Three classes: `mobile`, `desktop`, `other` (bots and command-line clients are `other`) | `DeviceClassifier`, behind `app.features.stats-device-breakdown` |
+| Personal data | No raw IP: an HMAC `ip_hash`; `Referer` / `User-Agent` truncated to 512 characters, never rejected (E24) | `IpHasher`, `ClickEventFactory` |
+| Granularity | Daily UTC buckets, `(short_code, date)` | `click_aggregates` (V3), `AggregationService` |
+| Consistency | Eventually consistent. The response carries `updatedAt` (last aggregation or a "queue drained" heartbeat), so "caught up" is distinguishable from "idle" (§6.5) | `AggregationHeartbeat` (writes it), `StatsService` (serves it) |
+| Duplicates | Delivery is at-least-once, so events are deduplicated by `event_id`; the dedup marker and the aggregate update commit in one transaction | `AggregationService` (`processed_events`) |
+| Retention | 90 days. An **assumption**, flagged for stakeholder confirmation (§19); enforced by the retention job and again when stats are read | `RetentionJob`, `StatsService` |
+| Failure isolation | Analytics never blocks or fails a redirect | see Execution |
+
+**Execution.** Queue-based and asynchronous. `ClickPublisher` is fire-and-forget: it never blocks and never throws, bounds in-flight sends with a semaphore, uses breaker `mq-publish` with **no retry** (a retry would trade redirect latency for a best-effort signal), and on any failure drops the event and increments `click_publish_failed` (F5). The queue is a RabbitMQ quorum queue with a delivery limit and a dead-letter exchange (F6); `ClickConsumer` acknowledges only after the aggregation transaction commits. Recorded in the traceability log: `[rejected]` a synchronous analytics write in the redirect path, because it violates §8.1; `[generated]` the analytics pipeline, verified on real RabbitMQ including the dead-letter path.
+
+**Validation as run:**
+
+- `AnalyticsIT` (11 tests, real RabbitMQ and MySQL): create → redirect → click queued → aggregated → stats reflect it (converges); `updatedAt` freshness; the queued event has an `ip_hash` and no raw IP; a click delivered three times is counted once (E21); clicks before deactivation are kept but stats for a deactivated code are `404` (E20); invalid and valid ranges (E22); data older than 90 days is never served; `abc` and `ABC` have separate analytics; an unparseable message is dead-lettered and the consumer keeps working, and a message that keeps failing is redelivered up to the limit and then dead-lettered (F6).
+- `FailureInjectionIT`, F5 and F6: with RabbitMQ cut, and separately black-holed (accepts the connection, never answers), redirects are never delayed or failed, events are dropped and counted, the breaker opens, and analytics resume on recovery; with the consumer stopped, events queue up, redirects are unaffected, stats stay stale but honest, and a restart converges. `PublishingTest` covers the publisher: it never throws or blocks, failures and an open breaker drop the event, and an exhausted in-flight cap drops new events rather than growing the heap.
+- Live (Postman/Newman, folder 4c): four clicks with different `Referer` and `User-Agent` values give exactly `totalClicks: 4`, referrers `news.example.org` ×2, `(direct)` ×1, `(unknown)` ×1, devices `mobile` 1, `desktop` 1, `other` 2, one UTC day bucket, and no token from the referrer URL in the response.
+
+**Not done.** (1) The plan's isolated load test showing redirect latency is unaffected by queue load: not run (README L1). The functional F5 test shows the redirect survives a broker outage, not that its latency is flat under queue load. (2) The plan's "reconciliation test" against raw click events: **not possible as written**, because raw events are deliberately not retained (§5.2). The substitute actually run is exact counting: the number of stats clicks equals the number of redirects sent (`AnalyticsIT`, Postman 4c), plus the dedup test. (3) The 90-day retention itself is still an unconfirmed assumption.
 
 ---
 
@@ -649,6 +725,7 @@ Prerequisites: JDK 21 (LTS), Maven 3.9+, Docker (for MySQL/Redis/broker via Test
 - 90-day analytics retention is an *assumption*, not a stated requirement — needs stakeholder confirmation.
 - Rate limit values (§11.3) are reasonable defaults, not derived from real traffic data — revisit after launch telemetry is available.
 - Bulk/batch URL creation is out of scope; each creation is a single synchronous request.
+- **Load tests have not been run** against the prototype (§17, §15.1, §15.3): the throughput and latency targets in §2.3 / §11.1 and the "redirect latency is unaffected by analytics load" check are unverified. Functional and fault-injection behaviour is verified (§15 *As built*).
 
 **Open questions for stakeholders:**
 - Should deactivated custom aliases ever be recyclable, and if so, after what retention period (E8)?
@@ -916,7 +993,7 @@ The current single-version (`v1`) contract needs no grouping. When a `v2` is int
 
 ## 23. Implementation Cross-Verification: Resolved Contradictions & Corrections
 
-Building the service from this document surfaced the points below. Each is resolved in the code and pinned by a test; the complete list (V-1 … V-19), coverage matrix and known limitations are in `docs/design-verification-report.md`.
+Building the service from this document surfaced the points below. Each is resolved in the code and pinned by a test; the complete list (V-1 … V-20), coverage matrix and known limitations are in `docs/design-verification-report.md`.
 
 | Section(s) | Issue | Resolution |
 |---|---|---|
@@ -933,3 +1010,4 @@ Building the service from this document surfaced the points below. Each is resol
 | §22.3 | Enabling springdoc and serving a static controller at `/v3/api-docs.yaml` lets the *generated* spec answer | Generator relocated to `/v3/generated-api-docs` and hidden; UI config path stays reachable |
 | §8.2.1 | "≥50% over last 20 calls" needs `minimumNumberOfCalls` (default 100) lowered | 10 (window 20) / 5 (window 10) |
 | §20.1 | `ofExponentialRandomBackoff` is not full jitter | Custom `random(0, min(cap, base·2^n))` |
+| §15.1–15.3 vs the repository | The plan text describes load tests, a raw-event reconciliation test, an added migration rollback script and an engineer-corrected first-draft cache race | None is evidenced in the repository: no load tests; raw events are not retained (§5.2) so reconciliation against them is impossible as written; no rollback script exists (V1–V3 are expand-only); the traceability log has no entry for the race. §15 now carries an *As built* block per scenario. **Open for the engineer:** supply the evidence, say it happened elsewhere, or downgrade the plan text (V-20) |
