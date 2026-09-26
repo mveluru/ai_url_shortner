@@ -35,7 +35,7 @@ curl -i localhost:8080/<shortCode>                     # 302 + Cache-Control: no
 curl -s localhost:8080/api/v1/urls/<shortCode>/stats -H "X-API-Key: $KEY"
 ```
 
-Swagger UI (local): <http://localhost:8080/swagger-ui.html> · health: `/actuator/health` · metrics: `/actuator/prometheus`.
+Swagger UI (local): <http://localhost:8080/swagger-ui/index.html> (`/swagger-ui.html` redirects there) · OpenAPI contract: <http://localhost:8080/v3/api-docs.yaml> · health: `/actuator/health` · metrics: `/actuator/prometheus`. Use the port the start script printed if 8080 was busy. Both Swagger URLs exist only in the `local`/`test` profiles.
 
 ## Setup guide
 
@@ -130,7 +130,7 @@ What it does, in order: checks Docker and Compose v2, checks that Java is 21 →
 
 **Try it** (Command Prompt, using `curl.exe`, which ships with Windows 10 and later; use the port the script printed if it is not 8080):
 
-1. **Swagger UI**, no tools needed: open `http://localhost:8080/swagger-ui.html`. Get a key with the request below, click **Authorize**, paste the key, then use *Try it out* on `POST /api/v1/urls`.
+1. **Swagger UI**, no tools needed: open `http://localhost:8080/swagger-ui/index.html`. Get a key with the request below, click **Authorize**, paste the key, then use *Try it out* on `POST /api/v1/urls`.
 2. **Command line:**
 
 ```bat
@@ -180,7 +180,8 @@ curl -s localhost:8080/actuator/health          # {"status":"UP", ... db, redis 
 
 | URL | What |
 |---|---|
-| <http://localhost:8080/swagger-ui.html> | API explorer (served from `docs/openapi.yaml`) |
+| <http://localhost:8080/swagger-ui/index.html> | API explorer (`/swagger-ui.html` redirects here) |
+| <http://localhost:8080/v3/api-docs.yaml> | The OpenAPI contract, byte-identical to `docs/openapi.yaml` (import it into Postman or a code generator) |
 | <http://localhost:8080/actuator/health> | Health (readiness depends on MySQL only; Redis/RabbitMQ down degrades but does not fail readiness) |
 | <http://localhost:8080/actuator/prometheus> | Metrics |
 | <http://localhost:15672> | RabbitMQ management UI (`guest` / `guest`) |
