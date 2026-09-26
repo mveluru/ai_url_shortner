@@ -1,6 +1,6 @@
 # URL Shortener — Comprehensive End-to-End Design Document
 
-**Document version:** 2.7
+**Document version:** 2.8
 **Last updated:** 2026-09-25
 **Status:** Implementation-ready
 **Target runtime:** Java 21 (LTS), Spring Boot 3.3+
@@ -21,6 +21,7 @@
 | 2.6 | 2026-09-25 | Implementation cross-verification: added §23 recording the contradictions found between sections and how the implementation resolved them (idempotency fingerprint, id allocation, `INVALID_*` vs `VALIDATION_FAILED`, SSRF octal bypass, springdoc path collision, replica routing, and others). Full detail: `docs/design-verification-report.md` |
 | 2.5 | 2026-09-25 | Added §22: Swagger/OpenAPI UI implementation — `springdoc-openapi` serving the actual `docs/openapi.yaml` as a static resource (not annotation-generated, to avoid a second source of truth), per-environment exposure/security, "Try it out" API-key wiring via the spec's existing security scheme, Maven build-time packaging, a CI check asserting the served doc matches the repo file byte-for-byte, and a forward-looking versioned-UI (groups) plan for when `v2` ships |
 | 2.7 | 2026-09-25 | §15: added an **As built in this repository** block to each of the three scenarios (decomposition → what delivered it, execution, validation as run, and what was *not* done), with a reading note. Recorded in §23 / V-20 that the plan text describes load tests, a raw-event reconciliation test and a migration rollback script that the repository does not contain. No guarantee changed; §19 gains one limitation (load tests not run).
+| 2.8 | 2026-09-26 | §22: corrected the Swagger URLs to match the implementation. The UI's canonical URL is `/swagger-ui/index.html` (`/swagger-ui.html` redirects to it); the contract is `/v3/api-docs.yaml`; `/v3/api-docs` is **not** served. The §22.3 configuration snippet now shows the implemented springdoc settings (generator relocated to `/v3/generated-api-docs`, V-11) and a URL table was added. No guarantee changed.
 
 ---
 
@@ -914,24 +915,38 @@ Instead: `openapi.yaml` is packaged as a classpath resource and served as-is at 
 
 | Dependency | Purpose |
 |---|---|
-| `org.springdoc:springdoc-openapi-starter-webmvc-ui` (2.x, Spring Boot 3+-compatible) | Provides the bundled Swagger UI static assets and the `/swagger-ui.html` entry point. Used **only** for its UI assets and routing in this project — its automatic spec-generation feature is disabled per §22.1. |
+| `org.springdoc:springdoc-openapi-starter-webmvc-ui` (2.x, Spring Boot 3+-compatible) | Provides the bundled Swagger UI static assets and its entry points: the canonical page is `/swagger-ui/index.html`, and the configured `/swagger-ui.html` redirects (`302`) to it. Used **only** for its UI assets and routing in this project — its automatic spec-generation feature is disabled per §22.1. |
 
 No `springdoc-openapi-starter-webmvc-api` generation dependency is needed beyond what the `-ui` starter already pulls in, since generation is turned off.
 
 ### 22.3 Configuration
 
 ```yaml
-# application.yml
+# application.yml (as implemented; see V-11 in docs/design-verification-report.md)
 springdoc:
   api-docs:
     enabled: true
-    path: /v3/api-docs          # served, not generated — see below
+    path: /v3/generated-api-docs   # springdoc's OWN generator, relocated away from the contract path and hidden (below)
   swagger-ui:
-    path: /swagger-ui.html
-    url: /v3/api-docs.yaml      # points the UI at the static contract file, not springdoc's generator
+    enabled: true
+    path: /swagger-ui.html         # entry point; springdoc redirects it to /swagger-ui/index.html
+    url: /v3/api-docs.yaml         # points the UI at the static contract file, not springdoc's generator
     disable-swagger-default-url: true
-  packages-to-scan: none        # nothing to scan — annotation-based generation is intentionally unused
+  packages-to-scan: none           # nothing to scan — annotation-based generation is intentionally unused
 ```
+
+The original draft of this snippet set `api-docs.path: /v3/api-docs`. That is wrong in practice: springdoc's generated document and the static controller below then compete for the same address, and content negotiation, not intent, decides which one answers (the two-sources-of-truth failure §22.1 warns about). The generator therefore lives at `/v3/generated-api-docs`, is answered with `404` by `HiddenRoutesFilter`, and only the UI's configuration sub-path stays reachable. The resulting URLs:
+
+| URL | What it is | `local` / `test` | `prod` |
+|---|---|---|---|
+| `/swagger-ui/index.html` | The Swagger UI (**canonical URL**) | `200` | disabled (`springdoc.swagger-ui.enabled: false`) |
+| `/swagger-ui.html` | The configured entry point | `302` to `/swagger-ui/index.html` | `404` |
+| `/v3/api-docs.yaml` | The contract, byte-identical to `docs/openapi.yaml` (`SwaggerIT`) | `200`, `application/yaml` | `404` |
+| `/v3/api-docs` | Not served: it must never answer with a generated spec | `404` | not served |
+| `/v3/generated-api-docs` | springdoc's generator, hidden | `404` | disabled |
+| `/v3/generated-api-docs/swagger-config` | The UI's own configuration (the only reachable sub-path) | `200` | disabled |
+
+The `local` / `test` column was measured against a running instance. In the `prod` column only `/swagger-ui.html` and `/v3/api-docs.yaml` were measured (`404` on the container image); the other cells follow from `springdoc.api-docs.enabled: false` and `springdoc.swagger-ui.enabled: false` and were not measured separately. The port is `server.port` (default `8080`); the local run scripts choose another free port when it is busy and print the URLs.
 
 ```java
 // Serves the actual contract file (classpath:openapi/openapi.yaml, copied into the build
@@ -953,7 +968,7 @@ This is intentionally simple — a static-resource serve, not a generation pipel
 
 ### 22.4 Exposure and security per environment
 
-- **`local`/`dev` profiles:** `/swagger-ui.html` and `/v3/api-docs.yaml` fully open, no auth — this is a developer convenience surface, not part of the product's authenticated API surface.
+- **`local`/`dev` profiles:** `/swagger-ui/index.html` (and `/swagger-ui.html`, which redirects to it) and `/v3/api-docs.yaml` fully open, no auth — this is a developer convenience surface, not part of the product's authenticated API surface.
 - **`staging`:** exposed but gated behind the same reverse-proxy basic-auth or VPN boundary already used for other internal tooling in that environment — not behind the product's own API-key auth (a chicken-and-egg problem: you shouldn't need an API key to discover how to get one).
 - **`production`:** disabled by default (`springdoc.api-docs.enabled: false`, `springdoc.swagger-ui.enabled: false` in the `prod` profile) — the machine-readable contract (`openapi.yaml`) is published through the project's documentation site/repo instead of being served live off the production API surface, consistent with `.claude/rules/security-rules.md`'s general posture of minimizing what an unauthenticated caller can discover about the running system. If a product requirement later calls for a public production API explorer, that is a deliberate decision to revisit here, not a default.
 
