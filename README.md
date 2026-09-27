@@ -16,6 +16,51 @@ Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from 
 | `.claude/` | AI-assistant context: invariants, rules, per-component skills, workflows |
 | `ops/prometheus-alerts.yml` | Alert rules from design §12.4 |
 
+## Sharing this project (e.g. for an interview)
+
+Two ways to hand this over, depending on whether the other side can reach GitHub.
+
+### Option A: share the GitHub link (recommended)
+
+The repository (`https://github.com/mveluru/ai_url_shortner`) is public, so sending that URL is enough:
+
+```bash
+git clone https://github.com/mveluru/ai_url_shortner.git
+```
+
+Prefer this when possible: it keeps the full commit history, which for this project is itself part of the deliverable — `git log`, `docs/ai-traceability-log.md` and the `[generated]`/`[edited]`/`[rejected]` tags on each commit (design §16, rule R3) show the AI-assisted process, not just the end state. GitHub also lets a reviewer browse individual commits and diffs directly.
+
+If the repository were private instead, the equivalent is adding the interviewer as a collaborator (Settings → Collaborators) rather than sending a link that will `404`; there is no need to make it public just to share it once.
+
+### Option B: a self-contained file (no GitHub account or network access needed)
+
+For a take-home upload, an email attachment, or an offline interview environment. Two variants, from the repo root:
+
+**With full commit history (recommended over a plain zip, for the same reason as Option A):**
+
+```bash
+git bundle create ai-url-shortener.bundle main
+```
+
+This produces one file (about 1 MB) containing every commit on `main` and nothing else — no working directory clutter, no `target/` build output, no `.git` internals to `cd` into by hand. The recipient restores it into an ordinary, fully-functional git repository:
+
+```bash
+git clone ai-url-shortener.bundle url-shortener
+cd url-shortener
+```
+
+From there every command in this README (`./run-local.sh`, `./mvnw verify`, ...) works exactly as if it had been cloned from GitHub, and `git log` still shows the real history. Verify a bundle before sending it with `git bundle verify ai-url-shortener.bundle`.
+
+**Snapshot only, no history** (smaller, but loses the commit-by-commit traceability described above):
+
+```bash
+git archive --format=zip -o ai-url-shortener-snapshot.zip HEAD
+```
+
+This is a plain zip of the current `main` tree with no `.git` directory at all — appropriate only when the reviewer explicitly wants "just the code," since it drops the very history that rule R3 exists to keep.
+
+Either option is safe to hand out as-is: nothing under version control is a real secret. The values baked into `docker-compose.yml` and `application.yml` (`urlshortener`/`urlshortener`, `guest`/`guest`, the `dev-only-...` Feistel key and IP-hash secret) are development-only placeholders that `ProdSecretsGuard` refuses outright in the `prod` profile (see *Production limitations from the local configuration* below) — there is nothing to redact before sharing.
+
 ## Quick start
 
 Prerequisites: JDK 21, Docker.
