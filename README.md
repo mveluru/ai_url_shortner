@@ -167,6 +167,8 @@ Test it with the commands in [Manual testing with curl](#manual-testing-with-cur
 
 ### Local development (recommended)
 
+The short version, if nothing is running yet and MySQL is free on its default port 3306:
+
 ```bash
 docker compose up -d                                                  # if not already running
 ./mvnw -pl url-shortener-service spring-boot:run
@@ -187,6 +189,53 @@ curl -s localhost:8080/actuator/health          # {"status":"UP", ... db, redis 
 | <http://localhost:15672> | RabbitMQ management UI (`guest` / `guest`) |
 
 Stop the app with `Ctrl+C` (it shuts down gracefully). Now go to [Manual testing with curl](#manual-testing-with-curl).
+
+#### Stopping and starting the complete server (Docker services + app)
+
+Use this when you want the whole stack down (nothing on 8080, 3306, 6379 or 5672) and then fully back up, for example to pick up a `docker-compose.yml` change or recover from a stuck state. `run-local.sh` / `run-local.bat` and `stop-local.sh` / `stop-local.bat` do the same thing in one command; this is the manual, step-by-step version.
+
+**Stop everything:**
+
+```bash
+# 1. Stop the app. If it is running in your terminal, Ctrl+C there instead.
+lsof -tiTCP:8080 -sTCP:LISTEN | xargs -r kill        # SIGTERM: graceful shutdown, waits for in-flight requests
+# if it does not exit within a few seconds:
+lsof -tiTCP:8080 -sTCP:LISTEN | xargs -r kill -9
+
+# 2. Confirm the port is free
+lsof -tiTCP:8080 -sTCP:LISTEN && echo "still up" || echo "port 8080 is free"
+
+# 3. Stop MySQL, Redis and RabbitMQ
+docker compose down            # keeps the data; add -v instead to also delete it (fresh database next time)
+```
+
+**Start everything:**
+
+```bash
+# 1. Is port 3306 free? (something outside this project - a native MySQL install, another docker-compose
+#    project - can already be listening on it; this is common and `docker compose up` does not fall back
+#    on its own, it fails outright with "Ports are not available")
+lsof -iTCP:3306 -sTCP:LISTEN
+
+# 2a. Nothing printed -> 3306 is free, start normally:
+docker compose up -d --wait
+
+# 2b. Something printed (or step 2a failed with "Ports are not available: ... bind: address already in use")
+#     -> publish MySQL on another port and export DB_URL to match, BEFORE starting the app. Forgetting the
+#     export is the single most common startup failure, and Spring reports it as a misleading "Access
+#     denied" rather than "connection refused", because something else answers on 3306 instead of nothing:
+MYSQL_PORT=3307 docker compose up -d --wait
+export DB_URL='jdbc:mysql://localhost:3307/urlshortener?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&connectTimeout=2000&socketTimeout=3000'
+#     (any free port works; confirm what compose actually bound with: docker compose port mysql 3306)
+
+# 3. Start the app (foreground; Ctrl+C stops it) and wait for "Started UrlShortenerApplication"
+./mvnw -pl url-shortener-service spring-boot:run
+
+# 4. From another terminal, confirm the whole stack is up
+curl -s localhost:8080/actuator/health
+```
+
+Expect `{"status":"UP", ..., "db":{"status":"UP"...}, "redis":{"status":"UP"...}, "rabbit":{"status":"UP"...}}`. If `db` is not `UP`, re-check step 2/3; if `redis` or `rabbit` is not `UP`, `docker compose ps` to see which container did not start.
 
 ### From an IDE
 
@@ -274,7 +323,8 @@ docker compose down -v         # stop and delete MySQL/Redis/RabbitMQ data (fres
 |---|---|
 | `Port 8080 was already in use` | Another instance is running. `lsof -iTCP:8080 -sTCP:LISTEN`, stop it, or start with `SERVER_PORT=8081`. |
 | `Communications link failure` / Hikari timeout to MySQL | MySQL is not healthy yet (`docker compose ps`), or it is on another port: set `DB_URL` (see step 3). |
-| `Access denied` on MySQL | Stale volume from an older run with different credentials: `docker compose down -v` and start again. |
+| `Access denied for user 'urlshortener'@'localhost'` on startup, but `docker compose ps` shows MySQL healthy | The app connected to something else on port 3306, not the compose MySQL, because MySQL is actually published on another host port. Run `docker compose port mysql 3306` and set `DB_URL` to match (see *Stopping and starting the complete server*). This is easy to hit right after changing `MYSQL_PORT`, or on a machine that already had something on 3306. |
+| `Access denied` on MySQL, and `DB_URL` already points at the right port | Stale volume from an older run with different credentials: `docker compose down -v` and start again. |
 | `run-local.bat`: `[ERROR] Docker is not installed or not running` | Start Docker Desktop and wait until it reports *running*. |
 | `run-local.bat`: `[ERROR] JDK 21 is required` | The default `java` is another version. Install JDK 21, point `JAVA_HOME` at it, open a **new** terminal. |
 | `run-local.bat` window closes at once | Start it from an open Command Prompt so the message stays visible (it also pauses on errors). |
