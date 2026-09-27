@@ -1,6 +1,6 @@
 # redirect-service
 
-**Responsibility:** Read path: cache-aside, stampede guard, breaker fallback, 302.
+**Responsibility:** Read path: cache-aside, stampede guard, breaker fallback, 302. This is the greenfield scenario (design §15.1, `package-info.java`).
 
 **Key classes / files:** `UrlLookupService`, `RedisUrlCache`, `BestEffortCache`, `CacheLookupResult`, `RedirectController`, `RedirectMetrics`
 

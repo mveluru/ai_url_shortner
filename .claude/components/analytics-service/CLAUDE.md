@@ -1,6 +1,6 @@
 # analytics-service
 
-**Responsibility:** Async click pipeline and stats API.
+**Responsibility:** Async click pipeline and stats API. This is the ambiguous scenario (design §15.3, `package-info.java`).
 
 **Key classes / files:** `ClickPublisher`, `ClickSender`, `ClickEventFactory`, `IpHasher`, `ClickConsumer`, `AggregationService`, `AggregationHeartbeat`, `QueueMonitor`, `StatsService`, `RetentionJob`
 

@@ -1,6 +1,6 @@
 # shortener-service
 
-**Responsibility:** Write path: validate → idempotency → allocate → insert → write-through.
+**Responsibility:** Write path: validate → idempotency → allocate → insert → write-through. Custom-alias support is the brownfield scenario (design §15.2, `package-info.java`).
 
 **Key classes / files:** `UrlService`, `UrlWriter`, `UrlReader`, `IdempotencyKey`, `ClaimRules`, `UrlValidator`, `SsrfGuard`, `AliasValidator`, `ExpiryValidator`, `ShortCodeGenerator`, `IdBlockAllocator`
 

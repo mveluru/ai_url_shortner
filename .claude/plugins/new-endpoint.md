@@ -5,4 +5,5 @@
 4. Data: migration if needed (expand-only) → data-layer playbook.
 5. Observability: metric + access-log field; alert if actionable.
 6. Tests: happy, each error row, auth/ownership, `@Covers`; run `OpenApiContractTest`.
-7. Update design doc + verification report if a guarantee changed.
+7. Add the endpoint to `postman/url-shortener.postman_collection.json` (a happy path and its error rows) — it is hand-maintained, nothing regenerates it.
+8. Update design doc + verification report if a guarantee changed.

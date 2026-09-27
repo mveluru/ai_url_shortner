@@ -7,7 +7,8 @@ observability → Swagger → failure injection → docs/tooling. Each step ende
 
 ## Artifacts
 Working prototype (`url-shortener-service/`), OpenAPI contract, Flyway schema, 278 unit + 117 integration/failure-injection tests (all passing, 2026-09-25),
-Prometheus alerts, docker-compose, Dockerfile, architecture diagrams, verification report, traceability log, `.claude/` tooling.
+Postman collection (71 requests / 165 assertions), `run-local`/`stop-local` scripts, Prometheus alerts, docker-compose, Dockerfile, architecture diagrams,
+verification report, traceability log, `.claude/` tooling.
 
 ## The three required scenarios (mapped to this repository)
 | Scenario | Decomposition → execution → validation |

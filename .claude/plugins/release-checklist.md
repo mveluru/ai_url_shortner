@@ -6,3 +6,5 @@
 - [ ] new API fields behind `app.features.*` flags
 - [ ] prod secrets present (`ProdSecretsGuard` will refuse otherwise); Swagger/`/internal` off
 - [ ] F10: ≥2 AZ, replica in another AZ (topology diagram)
+- [ ] `npx newman run postman/url-shortener.postman_collection.json` green against the build's `local` instance (manual smoke check — not part of `./mvnw verify`, README L26)
+- [ ] human sign-off recorded (§16, rule R2) if the redirect hot path, `SsrfGuard`/`UrlValidator`, `SecurityConfig`, a migration or resilience config changed

@@ -1,6 +1,6 @@
 # Design ↔ Implementation Verification Report
 
-Design document: `urldesign/url-shortener-comprehensive-design.md` v2.5. Assignment brief: `urldesign/010 - Assignment…pdf`.
+Design document: `urldesign/url-shortener-comprehensive-design.md` v2.8. Assignment brief: `urldesign/010 - Assignment…pdf`.
 Implementation: `url-shortener-service/` (Java 21, Spring Boot 3.3.13, MySQL 8.4, Redis 7, RabbitMQ 3.13).
 
 How this was checked (mechanically, not by reading):

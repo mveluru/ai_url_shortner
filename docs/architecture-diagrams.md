@@ -164,3 +164,45 @@ gantt
   v1 deprecated (Sunset header) :2027-06, 2027-12
   v1 sunset            :milestone, 2027-12, 0d
 ```
+
+## 9. Dependency criticality: hard vs soft (dotted) dependencies
+
+The design's central reliability decision (§8.1: "the redirect path depends only on Redis-or-MySQL — never on the
+queue, analytics store or auth") is stated in prose in a dozen places in this repository. This is that same decision
+drawn once, for all three services: **solid** = a hard dependency the caller blocks on, or that has a documented
+fallback; **dotted** = a soft, best-effort dependency whose failure is dropped, never retried, and never surfaced to
+the caller. The redirect service has exactly one dotted outgoing edge and, deliberately, no edge at all to auth.
+
+```mermaid
+flowchart LR
+  subgraph LG["Legend"]
+    direction LR
+    LGa["hard dependency"] -->|"blocks the caller,<br/>or a documented fallback"| LGb[" "]
+    LGc["soft dependency"] -.->|"best-effort, dropped on failure,<br/>never blocks or fails the caller"| LGd[" "]
+  end
+
+  RD["Redirect service<br/>(public, unauthenticated — S3)"]
+  SH["Shortener service<br/>(authenticated)"]
+  CN["Analytics consumer"]
+  RC[("Redis cache")]
+  DB[("MySQL primary / replica")]
+  MQ{{"RabbitMQ<br/>quorum queue"}}
+  N["Redirect never calls auth at all (S3, F11) —<br/>the one dependency this diagram omits on purpose"]
+
+  RD -->|"F1/F4: EITHER Redis<br/>or MySQL, never both required"| RC
+  RD -->|"F1/F4: EITHER Redis<br/>or MySQL, never both required"| DB
+  RD -.->|"F5: click event,<br/>dropped on failure"| MQ
+  RD -.- N
+
+  SH -->|"F3: writes never retried"| DB
+  SH -.->|"soft: write-through on create,<br/>invalidate (not update) on delete — F2;<br/>a miss just falls back to DB"| RC
+  SH -->|"F11: 401 if unreachable<br/>(same MySQL primary, Argon2, 30 s cache)"| DB
+
+  MQ -->|"F6: at-least-once,<br/>dedup + commit"| CN
+  CN --> DB
+
+  classDef note fill:#fff8dc,stroke:#c9a227,stroke-dasharray: 3 2
+  class N note
+  classDef hardnode stroke:#2d8a4e,stroke-width:2px
+  class RD,SH,CN,RC,DB,MQ hardnode
+```

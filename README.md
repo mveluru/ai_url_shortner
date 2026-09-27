@@ -1,6 +1,6 @@
 # URL Shortener
 
-Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from `urldesign/url-shortener-comprehensive-design.md` (v2.5).
+Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from `urldesign/url-shortener-comprehensive-design.md` (v2.8).
 
 ## Documentation map
 
@@ -15,6 +15,7 @@ Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from 
 | `docs/ai-traceability-log.md` | generated / edited / rejected log for this build |
 | `.claude/` | AI-assistant context: invariants, rules, per-component skills, workflows |
 | `ops/prometheus-alerts.yml` | Alert rules from design §12.4 |
+| `run-local.sh` / `run-local.bat`, `stop-local.sh` / `stop-local.bat` | One-command local start/stop (see *Starting the application*) |
 
 ## Sharing this project (e.g. for an interview)
 
@@ -546,7 +547,7 @@ behaviour (e.g. Redis down ⇒ redirects still 302 from MySQL, breaker opens, re
 ## Requirement coverage report
 
 Measured on **2026-09-25** against `main` with JDK 21, MySQL 8.4 / Redis 7 / RabbitMQ 3.13 (Testcontainers + Toxiproxy).
-Requirements come from design v2.5 (`urldesign/url-shortener-comprehensive-design.md`): §2.3 (a–f), §7 (E1–E24), §8 (F1–F13), §10, §12, §17.
+Requirements come from design v2.8 (`urldesign/url-shortener-comprehensive-design.md`): §2.3 (a–f), §7 (E1–E24), §8 (F1–F13), §10, §12, §17.
 
 | Check | Command | Result |
 |---|---|---|
