@@ -653,3 +653,36 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 ### Out of scope (design §1 / §19, `R7`)
 
 Multi-tenant user accounts / OAuth, multi-region active-active writes, bulk import, link-in-bio / landing pages, malware / phishing scanning (extension point only). Not built, and not to be added silently.
+
+## Requirements verified
+
+What "verified" means below: an automated test passed on real infrastructure, or a documented manual/Postman run matched the expected result. Full detail, including what is *not* checked off, is the [Requirement coverage report](#requirement-coverage-report) and [Known limitations](#known-limitations) above; this is the short version.
+
+- ✅ Create (auto code, custom alias, expiry), idempotent replay, deactivation lifecycle
+- ✅ Redirect: `302`, never `301`, `Cache-Control: no-store`, cache-aside, case-sensitive codes
+- ✅ Click analytics: exact counts, referrer/device breakdown, daily buckets, stats ranges
+- ✅ All 24 edge cases (E1–E24)
+- ✅ 10 of 13 failure modes (F1–F6, F8, F9, F11, F12) proven with real fault injection (Toxiproxy, real MySQL/Redis/RabbitMQ) — F7 and F13 are covered functionally/by unit test only, F10 is infrastructure (see L1, L3, L4)
+- ✅ Error taxonomy (one `GlobalExceptionHandler`, `requestId`-only bodies) and security controls (API-key auth, `403`/`404` ownership split, SSRF guard including the octal-IP bypass found by testing)
+- ✅ `docs/openapi.yaml` ↔ generated DTOs agree; Swagger UI serves that exact file, byte-identical
+- ✅ `./mvnw verify`: 395 tests green (278 unit + 117 integration/failure-injection), 0 failed, 0 skipped
+- ✅ `scripts/verify-design-coverage.py`: 37 / 37 design rows tagged with a test
+- ✅ Postman/Newman: 71 requests, 165 assertions, green three runs in a row, against a running local instance
+- ✅ Manual `curl` walk-through and the Docker `prod`-profile image: every documented status code matched
+
+Not checked off, and why, is in *Known limitations* above (notably L1: no load test) and in the section right below (limitations that come specifically from testing this locally rather than in a real deployment).
+
+## Production limitations from the local configuration
+
+Everything in this repository — the automated tests, the manual `curl`/Postman runs, and the one Docker `prod`-profile trial (see *Trying the container*) — was run against a single developer machine's Docker Compose services, never a real deployment. That leaves gaps that are about *how this was exercised*, not about the code itself; they are listed separately from [Known limitations](#known-limitations) for that reason.
+
+| # | What was actually run | What that does not prove |
+|---|---|---|
+| 1 | No TLS was ever served. The app never terminates TLS itself, by design (§10.2: a gateway does that); `prod` only checks that `PUBLIC_BASE_URL` is an `https://` string (`ProdSecretsGuardTest`). | Real certificates, TLS termination, and HTTPS end to end have not been exercised. In the one container trial, `shortUrl` read `https://...` while the container actually served plain HTTP — a local-only artifact, not a defect, but a reminder this was never real TLS. |
+| 2 | No reverse proxy or load balancer sat in front of the app. `server.forward-headers-strategy` was always `none` (the local default); `getRemoteAddr()` was always the loopback address or a Docker-network peer. | The `prod` setting (`native`, trusting a gateway's `X-Forwarded-For`) has never been exercised end to end. Per-IP rate limiting and the analytics `ip_hash` have only ever seen one synthetic address, never a real client IP arriving through a proxy chain. |
+| 3 | `docker-compose.yml` starts a single MySQL container; the run scripts and every manual test used it alone. F4 (replica fallback) is proven only inside `ReplicaFallbackIT`, which stands up its own separate Testcontainers MySQL. | A production read-replica topology (`APP_DATASOURCE_REPLICA_URL`) has never been hand-configured or exercised outside that one test class. |
+| 4 | Every run in this repository — local, container, or test — used exactly one application instance. | Per-instance rate limiting (L7) and the shared-RabbitMQ-vhost competing-consumer effect (L25) were only ever seen as failure modes to avoid (the container trial's clicks split across two databases). Real horizontal scaling, and instances coordinating correctly under load, have not been observed. |
+| 5 | The app always ran with the checked-in development secrets (`dev-only-...` Feistel key and IP-hash secret) and fixed dev credentials for MySQL/Redis/RabbitMQ from `docker-compose.yml`. `prod` refuses these (`ProdSecretsGuardTest`, `ProdProfileIT`). | No run in this repository has used real production secret material end to end. The Feistel key determines the actual short codes generated, so every code in this README and the test suite is a dev-key code, not representative of production output. |
+| 6 | `/internal/**` (issuing and revoking API keys, hard delete) exists only in `local`/`test` (S8). Every manual test, the Postman collection, and the container trial's key were minted or copied in this way. | There is no production path to issue an API key at all yet (L17); the entire key lifecycle as actually exercised here is a local convenience, not something that has ever run the way production would have to. |
+| 7 | The `MYSQL_PORT` / `REDIS_PORT` / `RABBIT_PORT` / `SERVER_PORT` juggling (see *Stopping and starting the complete server*) exists only because other software on this machine already uses those ports. | This has no equivalent in a real deployment, where each service has its own host or DNS name and port collisions do not occur; none of that port-selection logic is production code. |
+| 8 | Actuator's separate management port (`8081`) was reached directly on `localhost` in the one container trial, and not at all in the local profile (where it shares the app's port). | Whether a real network actually blocks public access to the management port, which production requires, has not been tested. It is a config setting (`management.server.port`), not a verified network boundary. |
