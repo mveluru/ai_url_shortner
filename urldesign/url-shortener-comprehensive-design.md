@@ -1,6 +1,6 @@
 # URL Shortener — Comprehensive End-to-End Design Document
 
-**Document version:** 2.8
+**Document version:** 2.9
 **Last updated:** 2026-09-25
 **Status:** Implementation-ready
 **Target runtime:** Java 21 (LTS), Spring Boot 3.3+
@@ -22,6 +22,7 @@
 | 2.6 | 2026-09-25 | Implementation cross-verification: added §23 recording the contradictions found between sections and how the implementation resolved them (idempotency fingerprint, id allocation, `INVALID_*` vs `VALIDATION_FAILED`, SSRF octal bypass, springdoc path collision, replica routing, and others). Full detail: `docs/design-verification-report.md` |
 | 2.7 | 2026-09-25 | §15: added an **As built in this repository** block to each of the three scenarios (decomposition → what delivered it, execution, validation as run, and what was *not* done), with a reading note. Recorded in §23 / V-20 that the plan text describes load tests, a raw-event reconciliation test and a migration rollback script that the repository does not contain. No guarantee changed; §19 gains one limitation (load tests not run).
 | 2.8 | 2026-09-26 | §22: corrected the Swagger URLs to match the implementation. The UI's canonical URL is `/swagger-ui/index.html` (`/swagger-ui.html` redirects to it); the contract is `/v3/api-docs.yaml`; `/v3/api-docs` is **not** served. The §22.3 configuration snippet now shows the implemented springdoc settings (generator relocated to `/v3/generated-api-docs`, V-11) and a URL table was added. No guarantee changed.
+| 2.9 | 2026-09-27 | §23: added V-21 (§20.1's "RabbitMQ or Kafka, either is a drop-in alternative" does not hold for F6's broker-native delivery-limit + dead-letter-exchange mechanism, which is RabbitMQ-specific) and V-22 (a real failure mode found by testing, not in the F1-F13 catalog: multiple environments sharing one RabbitMQ vhost split each other's click events across databases with no error or alert; README L25). §19 gains one limitation for V-22. No guarantee changed.
 
 ---
 
@@ -727,6 +728,7 @@ Prerequisites: JDK 21 (LTS), Maven 3.9+, Docker (for MySQL/Redis/broker via Test
 - Rate limit values (§11.3) are reasonable defaults, not derived from real traffic data — revisit after launch telemetry is available.
 - Bulk/batch URL creation is out of scope; each creation is a single synchronous request.
 - **Load tests have not been run** against the prototype (§17, §15.1, §15.3): the throughput and latency targets in §2.3 / §11.1 and the "redirect latency is unaffected by analytics load" check are unverified. Functional and fault-injection behaviour is verified (§15 *As built*).
+- **Multiple environments sharing one RabbitMQ instance/vhost is not a modeled failure mode.** Found by testing (V-22): two application instances on different databases but the same default vhost silently split each other's click events between the two databases. Each environment needs its own vhost; nothing in the application detects or alerts on the misconfiguration today.
 
 **Open questions for stakeholders:**
 - Should deactivated custom aliases ever be recyclable, and if so, after what retention period (E8)?
@@ -1008,7 +1010,7 @@ The current single-version (`v1`) contract needs no grouping. When a `v2` is int
 
 ## 23. Implementation Cross-Verification: Resolved Contradictions & Corrections
 
-Building the service from this document surfaced the points below. Each is resolved in the code and pinned by a test; the complete list (V-1 … V-20), coverage matrix and known limitations are in `docs/design-verification-report.md`.
+Building the service from this document surfaced the points below. Each is resolved in the code and pinned by a test; the complete list (V-1 … V-22), coverage matrix and known limitations are in `docs/design-verification-report.md`.
 
 | Section(s) | Issue | Resolution |
 |---|---|---|
@@ -1026,3 +1028,5 @@ Building the service from this document surfaced the points below. Each is resol
 | §8.2.1 | "≥50% over last 20 calls" needs `minimumNumberOfCalls` (default 100) lowered | 10 (window 20) / 5 (window 10) |
 | §20.1 | `ofExponentialRandomBackoff` is not full jitter | Custom `random(0, min(cap, base·2^n))` |
 | §15.1–15.3 vs the repository | The plan text describes load tests, a raw-event reconciliation test, an added migration rollback script and an engineer-corrected first-draft cache race | None is evidenced in the repository: no load tests; raw events are not retained (§5.2) so reconciliation against them is impossible as written; no rollback script exists (V1–V3 are expand-only); the traceability log has no entry for the race. §15 now carries an *As built* block per scenario. **Open for the engineer:** supply the evidence, say it happened elsewhere, or downgrade the plan text (V-20) |
+| §20.1 vs §8.2 (F6) | §20.1: "`spring-boot-starter-amqp` (RabbitMQ) or `spring-kafka` — either satisfies the durable/at-least-once requirement... Kafka is a drop-in alternative." §8.2's own table calls F6's mitigation "**Broker-native** redelivery". | F6 as implemented (`RabbitConfig`: a quorum queue's `x-delivery-limit` plus a broker-managed dead-letter exchange) depends on RabbitMQ-specific broker behavior. Kafka has no equivalent broker-native delivery-limit/DLQ; it would need hand-built retry-topic tooling, not a drop-in swap. §20.1's "drop-in alternative" holds for the at-least-once *guarantee*, not for the F6 *mechanism* (V-21) |
+| (not in F1–F13) | No design row addresses one RabbitMQ instance/vhost serving more than one environment; F5/F6 describe a single deployment's failure modes only. | **Found by testing, not by review:** a second application instance (a `prod`-profile container trial) on a *different* database but the *same* default vhost as a running `local` instance. Competing-consumer delivery split the *same* clicks between the two *different* databases (4 redirects → `totalClicks: 2` in each), with no error or alert. Documented as README L25. Each environment needs its own vhost (`SPRING_RABBITMQ_VIRTUAL_HOST`); nothing detects the misconfiguration today — a candidate for a new, tested `F14` row (`.claude/plugins/new-failure-mode.md`) rather than just a documented gotcha (V-22) |
