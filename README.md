@@ -236,6 +236,31 @@ curl -s localhost:8080/actuator/health          # {"status":"UP", ... db, redis 
 
 Stop the app with `Ctrl+C` (it shuts down gracefully). Now go to [Manual testing with curl](#manual-testing-with-curl).
 
+#### Viewing logs
+
+**The application** logs to the console only — there is no log file (`logback-spring.xml`) — so where you see it depends on how it was started:
+
+| Started with | Logs show up in |
+|---|---|
+| `./run-local.sh` / `run-local.bat` | That script's own terminal window, live |
+| `./mvnw -pl url-shortener-service spring-boot:run` in a terminal | That terminal |
+| `java -jar url-shortener-service/target/*.jar` | That terminal |
+| A Docker container (the *prod* trial below) | `docker logs -f <container-name>` |
+
+Every log line and every error response body carry the same `requestId` (also returned as the `X-Request-Id` header), so a failed call's exact server-side line can be found by searching the log for that id — error bodies deliberately carry nothing more (rule S6).
+
+**MySQL, Redis and RabbitMQ** run in Docker, so their logs are `docker compose logs`:
+
+```bash
+docker compose logs -f              # all three, following live
+docker compose logs mysql           # just one, e.g. to watch Flyway migrating or a connection issue
+docker compose logs rabbitmq        # e.g. to watch it accept the app's connection on startup
+```
+
+**RabbitMQ also has a web UI** at <http://localhost:15672> (`guest` / `guest` — a local-development default from `docker-compose.yml`, never used anywhere else). The *Queues* tab is a better way to watch analytics than the raw container logs: it shows the click-events queue and its dead-letter queue with live message and consumer counts, so a click landing (and being drained) is visible in real time, and a growing backlog is a direct sign the consumer has fallen behind (F6).
+
+> **What RabbitMQ is actually for here, in plain terms:** every click on a short link needs to be recorded for `/stats`, but looking up where to redirect someone and recording that a click happened are two jobs with very different urgency. The redirect has to be instant and must never fail just because click-recording is slow or briefly broken. RabbitMQ sits between the two: the redirect drops a small "this code was clicked" message on the queue and returns immediately, without waiting to see whether anyone reads it. A separate consumer drains that queue at its own pace and updates the click counts. If RabbitMQ or that consumer is down for a while, redirects keep working exactly as before — only the click counts fall behind, and catch up once it's back (`updatedAt` on `/stats` says how far behind, rather than hiding it). That is what the design means by "async, fire-and-forget analytics" (§8.1, F5/F6), and RabbitMQ is the piece that makes it possible without the redirect ever having to wait on it.
+
 #### Stopping and starting the complete server (Docker services + app)
 
 Use this when you want the whole stack down (nothing on 8080, 3306, 6379 or 5672) and then fully back up, for example to pick up a `docker-compose.yml` change or recover from a stuck state. `run-local.sh` / `run-local.bat` and `stop-local.sh` / `stop-local.bat` do the same thing in one command; this is the manual, step-by-step version.
