@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SpotBugs ratchet baseline (design doc engineering-rules.md, static-analysis gap fix).
+     Excludes the findings that existed when this file was generated, so mvn verify passes today
+     but a NEW finding (not listed here) fails the build. Regenerate deliberately with:
+       mvn -pl url-shortener-service -am compile spotbugs:spotbugs
+     then rebuild this file from target/spotbugsXml.xml - never hand-add an entry to silence a
+     finding without reviewing it first. -->
+<FindBugsFilter>
+    <Match>
+        <Class name="com.urlshortener.analytics.api.DailyStats"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.api.DailyStats"/>
+        <Method name="deviceBreakdown"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.api.DailyStats"/>
+        <Method name="topReferrers"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.api.UrlStats"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.api.UrlStats"/>
+        <Method name="daily"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.api.UrlStats"/>
+        <Method name="deviceBreakdown"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.api.UrlStats"/>
+        <Method name="topReferrers"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.consume.AggregationHeartbeat"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.consume.AggregationService"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.consume.ClickConsumer"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.consume.QueueMonitor"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.domain.ClickAggregateEntity"/>
+        <Method name="getDeviceBreakdown"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.domain.ClickAggregateEntity"/>
+        <Method name="getTopReferrers"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.domain.ClickAggregateEntity"/>
+        <Method name="setDeviceBreakdown"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.domain.ClickAggregateEntity"/>
+        <Method name="setTopReferrers"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.analytics.publish.ClickPublisher"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.config.AppProperties"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.config.AppProperties"/>
+        <Method name="retryBackoff"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.config.AppProperties"/>
+        <Method name="selfHosts"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.config.AppProperties$Alias"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.config.AppProperties$Alias"/>
+        <Method name="additionalReservedWords"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.config.ReplicaRoutingConfig"/>
+        <Method name="replicaDataSource"/>
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.error.ErrorResponse"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.error.ErrorResponse"/>
+        <Method name="fieldErrors"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.error.GlobalExceptionHandler"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.common.ratelimit.RateLimits"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.jobs.ExpirySweepJob"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.jobs.RetentionJob"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.redirect.RedirectMetrics"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.redirect.UrlLookupService"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.redirect.cache.BestEffortCache"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.redirect.cache.RedisUrlCache"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.shortener.domain.IdBlockAllocator"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.shortener.domain.ShortCodeGenerator"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.shortener.service.UrlService"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.shortener.service.UrlWriter"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.urlshortener.shortener.validation.ReservedAliases"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+</FindBugsFilter>
