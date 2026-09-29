@@ -57,5 +57,7 @@ See `docs/design-verification-report.md` §2 (V-1 … V-22). **V-1 needs an expl
 
 ## Human sign-off status
 
-Not yet given. Per §16, the redirect hot path (`UrlLookupService`, `RedisUrlCache`, `RedirectController`), the SSRF guard, the migrations
-and `SecurityConfig` require explicit engineer approval before merge.
+Not yet given for the redirect hot path as a whole, the SSRF guard, the migrations and `SecurityConfig` (§16) — still pending per README L5.
+
+**Scoped sign-offs recorded:**
+- 2026-09-29 — mveluru approved commit `04c2927` (`UrlLookupService.tryLock`: replaced a nullable `Boolean` with a `LockOutcome` enum to fix SpotBugs' `NP_BOOLEAN_RETURN_NULL`; no behavior change). Verified against real infra: `FailureInjectionIT` 16/16, including the F7 stampede-lock cases that exercise this path. This sign-off covers only this change, not the rest of `UrlLookupService`, `RedisUrlCache` or `RedirectController`.
