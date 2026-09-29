@@ -33,6 +33,9 @@
         <openapi-generator.version>7.10.0</openapi-generator.version>
         <logstash-logback-encoder.version>7.4</logstash-logback-encoder.version>
         <bouncycastle.version>1.78.1</bouncycastle.version>
+        <maven-checkstyle-plugin.version>3.5.0</maven-checkstyle-plugin.version>
+        <checkstyle.version>10.18.2</checkstyle.version>
+        <spotbugs-maven-plugin.version>4.8.6.6</spotbugs-maven-plugin.version>
     </properties>
 
     <build>
@@ -42,6 +45,34 @@
                     <groupId>org.openapitools</groupId>
                     <artifactId>openapi-generator-maven-plugin</artifactId>
                     <version>${openapi-generator.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-checkstyle-plugin</artifactId>
+                    <version>${maven-checkstyle-plugin.version}</version>
+                    <dependencies>
+                        <dependency>
+                            <groupId>com.puppycrawl.tools</groupId>
+                            <artifactId>checkstyle</artifactId>
+                            <version>${checkstyle.version}</version>
+                        </dependency>
+                    </dependencies>
+                    <configuration>
+                        <configLocation>${maven.multiModuleProjectDirectory}/checkstyle.xml</configLocation>
+                        <consoleOutput>true</consoleOutput>
+                        <failOnViolation>false</failOnViolation>
+                        <violationSeverity>warning</violationSeverity>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>com.github.spotbugs</groupId>
+                    <artifactId>spotbugs-maven-plugin</artifactId>
+                    <version>${spotbugs-maven-plugin.version}</version>
+                    <configuration>
+                        <effort>Max</effort>
+                        <threshold>Medium</threshold>
+                        <failOnError>false</failOnError>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
