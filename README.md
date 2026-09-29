@@ -659,14 +659,14 @@ Requirements come from design v2.8 (`urldesign/url-shortener-comprehensive-desig
 | Test strategy (§17) | Security tests | ⚠️ | SSRF, open-redirect (E5), alias injection ✅; DNS rebinding ❌ |
 | Process (§16, `R2`) | Human sign-off on high-impact paths | ❌ | **Pending** (L5) |
 | Process (§16, `R3`) | AI traceability | ✅ | `docs/ai-traceability-log.md` |
-| Process (§21.4) | Static-analysis / coverage gates, CI | ❌ | Not configured (L16) |
+| Process (§21.4) | Static-analysis / coverage gates, CI | ⚠️ | Checkstyle/SpotBugs wired, report-only; no CI (L16) |
 | Docs (§18, §21) | Setup guide, `.claude/`, diagrams, verification report | ✅ | `README.md`, `.claude/`, `docs/` |
 
 ### Summary
 
 - **Fully covered and passing:** every functional requirement except latency, all 24 edge cases, 10 of 13 failure modes fully (F7 and F13 partial, F10 infrastructure), and the security controls that were specified as tests, on real MySQL, Redis and RabbitMQ.
-- **Partially covered:** F7 (functional only), F13 (unit only), observability export, rate limiting (per instance), deployment (image not run).
-- **Not covered:** load and latency targets, DNS rebinding, F10 / DR (infrastructure), CI and static analysis, and the pending human sign-off.
+- **Partially covered:** F7 (functional only), F13 (unit only), observability export, rate limiting (per instance), deployment (image not run), static analysis (Checkstyle/SpotBugs wired but report-only — see L16).
+- **Not covered:** load and latency targets, DNS rebinding, F10 / DR (infrastructure), CI, and the pending human sign-off.
 - **Design questions still open:** V-1 in `docs/design-verification-report.md` (`INVALID_URL` vs `VALIDATION_FAILED` for blank input) needs an explicit engineer decision.
 
 ## Contributing
@@ -708,7 +708,7 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 | # | Limitation | Consequence |
 |---|---|---|
 | L15 | **Tracing export (OTLP) is not wired.** Spans and trace ids exist (`requestId` == trace id). | Export is a deployment setting; nothing is shipped to a tracing backend out of the box. |
-| L16 | **No static-analysis or coverage gates** (Checkstyle, SpotBugs, JaCoCo) and **no CI pipeline** (no `.github/`). | The compiler and tests are the only automated gates, and they run only if someone runs them. |
+| L16 | **Checkstyle and SpotBugs are wired into the build but report-only** (`failOnViolation`/`failOnError` are `false` in `pom.xml`) — no coverage gate (JaCoCo) exists at all, and there's still **no CI pipeline** (no `.github/`). | Static-analysis findings (SpotBugs already surfaces real ones, e.g. `EI_EXPOSE_REP` across several DTOs/services) don't block anything, and nothing runs automatically without a human triggering it. |
 | L17 | **`/internal/**` and Swagger UI exist only in `local`/`test`** (S8, §22.4). | There is no production way to issue API keys yet; that needs an admin/key-management path. |
 | L18 | **Single region, single writer.** Multi-region active-active writes are deferred. | A regional outage is a full outage until failover. |
 | L19 | **JDK 21 is the supported toolchain.** The build was verified on 21 only; the machine default JDK (24) was not used. | Build with `JAVA_HOME` set to a JDK 21. |
