@@ -11,6 +11,91 @@
             "statusMessage": "Running layer unit tests + doc guardrail..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/redirect/**)",
+            "prompt": "A redirect-hot-path file changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's 'Requirements verified' table and 'Known limitations' tables. If the diff changed something those sections state as true today (a status code, a timeout/threshold, a covered-or-not claim, a documented behavior) — edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic (rename, comment, formatting, refactor with identical behavior) or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md. Never claim human sign-off (R2) happened or change sign-off wording — that is only ever recorded by a human in docs/ai-traceability-log.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs a redirect-path update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/api/RedirectController.java)",
+            "prompt": "A redirect-hot-path file changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's 'Requirements verified' table and 'Known limitations' tables. If the diff changed something those sections state as true today (a status code, a timeout/threshold, a covered-or-not claim, a documented behavior) — edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic (rename, comment, formatting, refactor with identical behavior) or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md. Never claim human sign-off (R2) happened or change sign-off wording — that is only ever recorded by a human in docs/ai-traceability-log.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs a redirect-path update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/shortener/validation/**)",
+            "prompt": "An SSRF/URL-validation file changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's 'Requirements verified' table and 'Known limitations' tables (SSRF/security rows). If the diff changed something those sections state as true today (which host classes are rejected, a validation rule, a covered-or-not claim) — edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md. Never claim human sign-off (R2) happened — that is only ever recorded by a human in docs/ai-traceability-log.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs an SSRF/validation update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/common/security/**)",
+            "prompt": "An auth/SecurityConfig file changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's 'Requirements verified' table and 'Known limitations' tables (auth/API-key rows). If the diff changed something those sections state as true today (auth flow, key rotation, a covered-or-not claim) — edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md. Never claim human sign-off (R2) happened — that is only ever recorded by a human in docs/ai-traceability-log.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs a security-config update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/resources/db/migration/**)",
+            "prompt": "A Flyway migration changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's schema/migration-related sections and 'Known limitations' tables. If the diff changed something those sections state as true today (a column, constraint, index, retention behavior) — edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md. Never claim human sign-off (R2) happened — that is only ever recorded by a human in docs/ai-traceability-log.md. Note: rule #10 says migrations are expand/contract only and an already-applied migration must never be edited — if this looks like an edit to an existing (already-committed) migration rather than a new file, say so in your README note only if there is something concrete to correct; otherwise do nothing.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs a migration update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/common/resilience/**)",
+            "prompt": "A resilience-config file changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's 'Requirements verified' table and 'Known limitations' tables (breaker/retry/rate-limit rows). If the diff changed a documented threshold, timeout, retry policy or breaker name — edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md. Never claim human sign-off (R2) happened — that is only ever recorded by a human in docs/ai-traceability-log.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs a resilience-config update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(docs/openapi.yaml)",
+            "prompt": "The API contract changed: $ARGUMENTS. Read the changed file and run `git diff -- docs/openapi.yaml` to see what actually changed. Then read README.md's 'Requirements verified' table and Swagger/contract-related sections. If the diff added/removed an endpoint, changed a status code's meaning, or changed the error-code enum — edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the spec. If the diff is cosmetic (wording, example values) or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs an API-contract update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/shortener/api/**)",
+            "prompt": "An API DTO changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's 'Requirements verified' table and contract-related sections, and check whether docs/openapi.yaml still matches (do not edit openapi.yaml). If the DTO change reflects a documented field/behavior change in README.md, edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs a contract update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/analytics/api/**)",
+            "prompt": "An API DTO changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's 'Requirements verified' table and contract-related sections, and check whether docs/openapi.yaml still matches (do not edit openapi.yaml). If the DTO change reflects a documented field/behavior change in README.md, edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. If the diff is cosmetic or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs a contract update..."
+          },
+          {
+            "type": "agent",
+            "if": "Edit(url-shortener-service/src/main/java/com/urlshortener/common/error/**)",
+            "prompt": "The error contract changed: $ARGUMENTS. Read the changed file (tool_input.file_path) and run `git diff -- <that path>` to see what actually changed. Then read README.md's error-contract / ErrorCode-related content. If an ErrorCode was added/removed/renamed or the error-response shape changed, edit ONLY the specific affected line(s) in README.md, minimally and factually, using nothing you have not verified by reading the code. Note rule A5: a new ErrorCode also needs the spec enum, the design doc's §9.2 table and a GlobalExceptionHandlerTest row — mention that as a reminder in your README edit's surrounding text only if you make an edit, but do not add those elsewhere yourself. If the diff is cosmetic or you are not confident it changed a documented claim, do nothing and exit without editing any file. If the change looks like it violates one of CLAUDE.md's non-negotiable invariants (e.g. #2 redirect must stay 302 with no-store, #4 uniqueness must come from a DB constraint not a pre-check, #8 writes are never auto-retried) rather than legitimately evolving a documented guarantee, treat that as a likely bug in the code, not grounds to update the doc — do nothing to README.md in that case. Never edit any file other than README.md.",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Checking if README.md needs an error-contract update..."
+          }
+        ]
       }
     ]
   }
