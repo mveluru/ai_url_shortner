@@ -1,6 +1,6 @@
 # URL Shortener
 
-Java 21 · Spring Boot 3.3 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from `urldesign/url-shortener-comprehensive-design.md` (v2.8).
+Java 25 · Spring Boot 3.5 · MySQL 8.4 · Redis 7 · RabbitMQ 3.13. Built from `urldesign/url-shortener-comprehensive-design.md` (v2.8).
 
 ## Documentation map
 
@@ -64,15 +64,15 @@ Either option is safe to hand out as-is: nothing under version control is a real
 
 ## Quick start
 
-Prerequisites: JDK 21, Docker.
+Prerequisites: JDK 25, Docker.
 
-**Windows, one command:** with Docker Desktop and JDK 21 installed, run `run-local.bat` in the repo root. It starts everything, picks free ports for you and opens Swagger UI. Details: [Windows: one command](#windows-one-command-run-localbat).
+**Windows, one command:** with Docker Desktop and JDK 25 installed, run `run-local.bat` in the repo root. It starts everything, picks free ports for you and opens Swagger UI. Details: [Windows: one command](#windows-one-command-run-localbat).
 
-**macOS / Linux, one command:** with Docker and JDK 21 installed, run `./run-local.sh` in the repo root ([details](#macos--linux-one-command-run-localsh)).
+**macOS / Linux, one command:** with Docker and JDK 25 installed, run `./run-local.sh` in the repo root ([details](#macos--linux-one-command-run-localsh)).
 
 ```bash
 docker compose up -d                                  # MySQL, Redis, RabbitMQ
-JAVA_HOME=<jdk21> ./mvnw -pl url-shortener-service spring-boot:run   # Flyway migrates on startup
+JAVA_HOME=<jdk25> ./mvnw -pl url-shortener-service spring-boot:run   # Flyway migrates on startup
 
 KEY=$(curl -s -X POST localhost:8080/internal/api-keys | jq -r .apiKey)     # dev/test profiles only
 curl -s -X POST localhost:8080/api/v1/urls -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
@@ -89,7 +89,7 @@ Swagger UI (local): <http://localhost:8080/swagger-ui/index.html> (`/swagger-ui.
 
 | Tool | Version | Notes |
 |---|---|---|
-| JDK | **21** | The build targets Java 21. A newer default JDK (e.g. 24) is not the supported toolchain, so point `JAVA_HOME` at a 21 install. |
+| JDK | **25 (LTS)** | The build targets Java 25. This machine's default JDK (24) is a non-LTS release and is deliberately not used — point `JAVA_HOME` at a 25 install. |
 | Docker + Compose v2 | any recent | Runs MySQL 8.4, Redis 7 and RabbitMQ 3.13 locally. Also required for `./mvnw verify` (Testcontainers). |
 | `curl`, `jq` | any | Only for the manual testing section. |
 | Python 3 | any recent | Only for `scripts/verify-design-coverage.py`. |
@@ -97,8 +97,8 @@ Swagger UI (local): <http://localhost:8080/swagger-ui/index.html> (`/swagger-ui.
 Maven is not needed: the repo ships the Maven wrapper (`./mvnw`).
 
 ```bash
-java -version                       # must report 21.x
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)     # macOS; on Linux point it at your JDK 21 directory
+java -version                       # must report 25.x
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)     # macOS; on Linux point it at your JDK 25 directory
 docker compose version
 ```
 
@@ -162,7 +162,7 @@ python3 scripts/verify-design-coverage.py       # design coverage check
 
 For someone who has just been sent this repo and wants it running with no manual steps.
 
-**One-time install:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (start it and wait until it says *running*) and **JDK 21** (for example Eclipse Temurin 21). Set `JAVA_HOME` to that JDK if it is not your default Java. Nothing else: no Maven, MySQL, Redis or RabbitMQ install, and no `jq` or bash.
+**One-time install:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (start it and wait until it says *running*) and **JDK 25** (for example Eclipse Temurin 25). Set `JAVA_HOME` to that JDK if it is not your default Java. Nothing else: no Maven, MySQL, Redis or RabbitMQ install, and no `jq` or bash.
 
 ```bat
 git clone https://github.com/mveluru/ai_url_shortner.git
@@ -170,7 +170,7 @@ cd ai_url_shortner
 run-local.bat
 ```
 
-What it does, in order: checks Docker and Compose v2, checks that Java is 21 → picks ports → `docker compose up -d --wait` for MySQL, Redis and RabbitMQ → waits for RabbitMQ → sets `DB_URL`, `PUBLIC_BASE_URL` and the port variables for the app → opens Swagger UI once `/actuator/health` responds → runs `mvnw.cmd -pl url-shortener-service spring-boot:run`. The first run pulls Docker images and downloads Maven dependencies, so allow a few minutes. Flyway creates the schema.
+What it does, in order: checks Docker and Compose v2, checks that Java is 25 → picks ports → `docker compose up -d --wait` for MySQL, Redis and RabbitMQ → waits for RabbitMQ → sets `DB_URL`, `PUBLIC_BASE_URL` and the port variables for the app → opens Swagger UI once `/actuator/health` responds → runs `mvnw.cmd -pl url-shortener-service spring-boot:run`. The first run pulls Docker images and downloads Maven dependencies, so allow a few minutes. Flyway creates the schema.
 
 **Ports never need to be edited by hand.** The script reuses containers that are already running from this project. For anything else it takes the default (`3306`, `6379`, `5672`, `15672`, `8080`) or the next free port if something on your machine already uses it. It prints the final URLs and ports, so use those. `run-local.bat noopen` skips opening the browser.
 
@@ -197,7 +197,7 @@ The last call should return `302` with `Location: https://example.com` and `Cach
 
 Same idea as the Windows script, for bash (works with the bash 3.2 that ships with macOS).
 
-**One-time install:** Docker (Docker Desktop on macOS; Docker Engine with the compose plugin on Linux) and **JDK 21** (`brew install --cask temurin@21` on macOS). The script finds a JDK 21 for you (`/usr/libexec/java_home -v 21`, `/usr/lib/jvm`, sdkman, or `java` on the `PATH`), so you do not need to set `JAVA_HOME` or change your default Java. No Maven, `jq` or database install is needed.
+**One-time install:** Docker (Docker Desktop on macOS; Docker Engine with the compose plugin on Linux) and **JDK 25** (`brew install --cask temurin@25` on macOS). The script finds a JDK 25 for you (`/usr/libexec/java_home -v 25`, `/usr/lib/jvm`, sdkman, or `java` on the `PATH`), so you do not need to set `JAVA_HOME` or change your default Java. No Maven, `jq` or database install is needed.
 
 ```bash
 git clone https://github.com/mveluru/ai_url_shortner.git
@@ -205,7 +205,7 @@ cd ai_url_shortner
 ./run-local.sh              # add --no-open to skip opening Swagger UI in the browser
 ```
 
-It does the same steps as `run-local.bat`: checks Docker and JDK 21, reuses this project's running containers or picks free ports, starts MySQL, Redis and RabbitMQ, exports the app configuration, opens Swagger UI once the app is healthy, and runs `./mvnw -pl url-shortener-service spring-boot:run`. **Ports need no manual editing**: if 8080 (or 3306, 6379, 5672, 15672) is busy it uses the next free one and prints the URLs. The first run pulls images and downloads dependencies, so allow a few minutes.
+It does the same steps as `run-local.bat`: checks Docker and JDK 25, reuses this project's running containers or picks free ports, starts MySQL, Redis and RabbitMQ, exports the app configuration, opens Swagger UI once the app is healthy, and runs `./mvnw -pl url-shortener-service spring-boot:run`. **Ports need no manual editing**: if 8080 (or 3306, 6379, 5672, 15672) is busy it uses the next free one and prints the URLs. The first run pulls images and downloads dependencies, so allow a few minutes.
 
 Test it with the commands in [Manual testing with curl](#manual-testing-with-curl) (replace `localhost:8080` with the port the script printed if it differs), or use Swagger UI.
 
@@ -310,7 +310,7 @@ Expect `{"status":"UP", ..., "db":{"status":"UP"...}, "redis":{"status":"UP"...}
 
 ### From an IDE
 
-Import the root `pom.xml` as a Maven project with a JDK 21 SDK, build once (`./mvnw -pl url-shortener-service generate-sources`) so the generated API interfaces exist, then run `com.urlshortener.UrlShortenerApplication`. No program arguments or profile are needed.
+Import the root `pom.xml` as a Maven project with a JDK 25 SDK, build once (`./mvnw -pl url-shortener-service generate-sources`) so the generated API interfaces exist, then run `com.urlshortener.UrlShortenerApplication`. No program arguments or profile are needed.
 
 ### As a jar
 
@@ -397,9 +397,9 @@ docker compose down -v         # stop and delete MySQL/Redis/RabbitMQ data (fres
 | `Access denied for user 'urlshortener'@'localhost'` on startup, but `docker compose ps` shows MySQL healthy | The app connected to something else on port 3306, not the compose MySQL, because MySQL is actually published on another host port. Run `docker compose port mysql 3306` and set `DB_URL` to match (see *Stopping and starting the complete server*). This is easy to hit right after changing `MYSQL_PORT`, or on a machine that already had something on 3306. |
 | `Access denied` on MySQL, and `DB_URL` already points at the right port | Stale volume from an older run with different credentials: `docker compose down -v` and start again. |
 | `run-local.bat`: `[ERROR] Docker is not installed or not running` | Start Docker Desktop and wait until it reports *running*. |
-| `run-local.bat`: `[ERROR] JDK 21 is required` | The default `java` is another version. Install JDK 21, point `JAVA_HOME` at it, open a **new** terminal. |
+| `run-local.bat`: `[ERROR] JDK 25 is required` | The default `java` is another version. Install JDK 25, point `JAVA_HOME` at it, open a **new** terminal. |
 | `run-local.bat` window closes at once | Start it from an open Command Prompt so the message stays visible (it also pauses on errors). |
-| Build fails with a Java or release error | Wrong JDK: `java -version` must show 21; set `JAVA_HOME`. |
+| Build fails with a Java or release error | Wrong JDK: `java -version` must show 25; set `JAVA_HOME`. |
 | `/actuator/health` shows `redis` or `rabbit` DOWN | Service not running: `docker compose up -d`. Redirects still work from MySQL, but clicks are not recorded. |
 | `404` on `/internal/api-keys` | Running under `prod`; those helpers exist only in `local`/`test`. |
 
@@ -571,7 +571,7 @@ behaviour (e.g. Redis down ⇒ redirects still 302 from MySQL, breaker opens, re
 
 ## Requirement coverage report
 
-Measured on **2026-09-25** against `main` with JDK 21, MySQL 8.4 / Redis 7 / RabbitMQ 3.13 (Testcontainers + Toxiproxy).
+Measured on **2026-09-25** against `main` with JDK 21, MySQL 8.4 / Redis 7 / RabbitMQ 3.13 (Testcontainers + Toxiproxy); re-verified **2026-09-29** after the JDK 25 / Spring Boot 3.5 migration — identical results (395/395 tests, 37/37 design rows), so the counts below are unchanged.
 Requirements come from design v2.8 (`urldesign/url-shortener-comprehensive-design.md`): §2.3 (a–f), §7 (E1–E24), §8 (F1–F13), §10, §12, §17.
 
 | Check | Command | Result |
@@ -711,12 +711,12 @@ Detail and rationale: `docs/design-verification-report.md` §4 and design §19 /
 | L16 | **Checkstyle and SpotBugs now block the build** (`failOnViolation`/`failOnError` are `true` in `pom.xml`). Checkstyle currently has 0 violations. SpotBugs uses a ratchet: `url-shortener-service/spotbugs-exclude.xml` excludes the 54 findings that existed when it was generated (mostly `EI_EXPOSE_REP`/`EI_EXPOSE_REP2` mutable-field exposure and `CT_CONSTRUCTOR_THROW`), so any **new** finding fails the build. No coverage gate (JaCoCo) exists, and there's still **no CI pipeline** (no `.github/`). | The 54 excluded findings are real, tracked debt (not fixed, not hidden) — they were deliberately not fixed here since that's separate, wider-blast-radius work across many files. Nothing runs automatically without a human (or Claude) triggering `mvn verify` locally. |
 | L17 | **`/internal/**` and Swagger UI exist only in `local`/`test`** (S8, §22.4). | There is no production way to issue API keys yet; that needs an admin/key-management path. |
 | L18 | **Single region, single writer.** Multi-region active-active writes are deferred. | A regional outage is a full outage until failover. |
-| L19 | **JDK 21 is the supported toolchain.** The build was verified on 21 only; the machine default JDK (24) was not used. | Build with `JAVA_HOME` set to a JDK 21. |
+| L19 | **JDK 25 (LTS) is the supported toolchain.** This machine's default JDK (24) is a non-LTS release and is deliberately not used; JDK 25 was installed specifically for this project. SpotBugs is temporarily skipped on JDK 25 (pom.xml) since its bytecode analyzer doesn't yet support JDK 25 class files upstream — not fixable in this repo, re-enable once spotbugs-maven-plugin ships support. | Build with `JAVA_HOME` set to a JDK 25 install. Until SpotBugs adds JDK 25 support, its ratchet gate (L16) is dormant, not removed. |
 | L20 | **Docker is required** for the integration and failure-injection tests (Testcontainers), and takes about 3 minutes. | `./mvnw test` runs the 278 unit tests without it. |
 | L21 | **Outside `run-local.bat` / `run-local.sh`, changing a host port takes several variables** (`MYSQL_PORT` **and** `DB_URL`; `REDIS_PORT`; `RABBIT_PORT`; `SERVER_PORT`). | the scripts set them all for you; for a manual start see the Setup guide. |
 | L22 | **The jar start-up path in this README was not executed.** The container image **was** built and run (macOS, `prod` profile, against the compose services; see *Trying the container*), but not on Linux/Windows hosts, behind a TLS gateway, or in an orchestrator. | Treat the jar path and any real deployment as unverified until run. |
 | L23 | **`run-local.bat` and `stop-local.bat` have not been executed on Windows** (written and reviewed on macOS). Verified here: the compose port overrides they rely on, the `docker compose port` output they parse, the RabbitMQ readiness command, and that `up` with their computed ports recreates nothing. | Batch syntax, `netstat` port detection and the auto-open of Swagger UI are untested on Windows. macOS/Linux have no equivalent script. |
-| L24 | **`run-local.sh` / `stop-local.sh` were tested on macOS only** (bash 3.2, JDK 21, Docker Desktop, with this project's containers already running and port 8080 busy): port reuse and free-port selection, app start, create + redirect against the new instance, a real Ctrl+C, and the `stop-local.sh` argument and confirmation paths. Not run on Linux, and never against an empty machine (first-time image pull). | The Linux branches (`ss` port detection, JDK search in `/usr/lib/jvm`, `xdg-open`) and a from-scratch first run are untested. |
+| L24 | **`run-local.sh` / `stop-local.sh` were tested on macOS only** (bash 3.2, JDK 21 at the time, Docker Desktop, with this project's containers already running and port 8080 busy): port reuse and free-port selection, app start, create + redirect against the new instance, a real Ctrl+C, and the `stop-local.sh` argument and confirmation paths. Not run on Linux, and never against an empty machine (first-time image pull). The scripts now require JDK 25 (updated alongside the rest of the build); that specific change has not been re-verified end to end via the scripts themselves, though the equivalent `./mvnw` commands have (see the Requirement coverage report). | The Linux branches (`ss` port detection, JDK search in `/usr/lib/jvm`, `xdg-open`) and a from-scratch first run are untested. |
 | L25 | **Click events use one shared queue per RabbitMQ vhost.** Two instances on the same vhost but different databases split each other's click events between the two databases. Also recorded as V-22 in the design doc and verification report, since no F-row in the F1–F13 catalog covers it. | Analytics silently under-count in each database. Give each environment its own vhost; see the warning under *Trying the container*. Nothing in the app detects this misconfiguration. |
 | L26 | **The Postman collection is a manual/black-box check, not part of `./mvnw verify` or any CI.** Verified with Newman (6.2.2) against a running local app: 71 requests, 165 assertions, passing three times in a row (about 5.5 s each); a deliberately broken copy failed as it should. **Not opened in the Postman desktop app.** It needs the `local` profile (it calls `/internal/**`). | It cannot exercise the `prod` image, and nothing runs it automatically, so it can drift from `docs/openapi.yaml` unless someone runs it. |
 | L27 | **Design §15 (the three scenarios) describes steps the repository does not evidence**: load tests, an added migration rollback script, a "reconciliation test" against raw click events (impossible as written: raw events are not retained) and an engineer-corrected first-draft cache race. Design §15 now has an *As built* block per scenario (also as Javadoc on the `redirect`, `shortener` and `analytics` packages). | The plan text and the record disagree until the engineer supplies the evidence or downgrades the plan text (V-20). |

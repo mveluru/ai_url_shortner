@@ -5,7 +5,7 @@
 #    ./run-local.sh              start MySQL/Redis/RabbitMQ in Docker, then the app
 #    ./run-local.sh --no-open    same, but do not open Swagger UI in the browser
 #
-#  Needs: Docker (running) with Compose v2, and JDK 21. No Maven install needed (./mvnw).
+#  Needs: Docker (running) with Compose v2, and JDK 25. No Maven install needed (./mvnw).
 #  Ports are chosen automatically: containers already running from this project
 #  are reused, and anything else that is busy (3306, 6379, 5672, 15672, 8080) moves
 #  to the next free port, so this does not clash with software you already run.
@@ -33,28 +33,28 @@ command -v docker >/dev/null 2>&1 || fail "Docker is not installed. Install Dock
 docker info >/dev/null 2>&1 || fail "Docker is not running. Start Docker Desktop (or the docker service), wait until it is ready, then run this again."
 docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required (the 'docker compose' command). Update Docker."
 
-# ---- 2. JDK 21 ---------------------------------------------------------------
-java_ok() { local v; v=$("$1" -version 2>&1 || true); [[ $v == *'version "21'* ]]; }
+# ---- 2. JDK 25 ---------------------------------------------------------------
+java_ok() { local v; v=$("$1" -version 2>&1 || true); [[ $v == *'version "25'* ]]; }
 
 if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ] && java_ok "$JAVA_HOME/bin/java"; then
-  :                                                              # JAVA_HOME already points at a JDK 21
+  :                                                              # JAVA_HOME already points at a JDK 25
 else
   found=""
-  if [ -x /usr/libexec/java_home ]; then                         # macOS: ask the system for a JDK 21
-    found=$(/usr/libexec/java_home -v 21 2>/dev/null || true)
+  if [ -x /usr/libexec/java_home ]; then                         # macOS: ask the system for a JDK 25
+    found=$(/usr/libexec/java_home -v 25 2>/dev/null || true)
   fi
   if [ -z "$found" ]; then                                       # Linux: common install locations
-    for d in /usr/lib/jvm/*21* /usr/lib64/jvm/*21* /opt/java/*21* "$HOME"/.sdkman/candidates/java/21*; do
+    for d in /usr/lib/jvm/*25* /usr/lib64/jvm/*25* /opt/java/*25* "$HOME"/.sdkman/candidates/java/25*; do
       if [ -x "$d/bin/java" ] && java_ok "$d/bin/java"; then found=$d; break; fi
     done
   fi
   if [ -n "$found" ]; then
     export JAVA_HOME="$found"
   elif command -v java >/dev/null 2>&1 && java_ok java; then
-    unset JAVA_HOME                                              # 'java' on PATH is 21; make ./mvnw use it
+    unset JAVA_HOME                                              # 'java' on PATH is 25; make ./mvnw use it
   else
     have=$( (java -version 2>&1 || true) | head -n1)
-    fail "JDK 21 is required. Found: ${have:-no java}. Install JDK 21 and set JAVA_HOME to it (macOS: brew install --cask temurin@21; Linux: your package manager or sdkman), then run this again."
+    fail "JDK 25 is required. Found: ${have:-no java}. Install JDK 25 and set JAVA_HOME to it (macOS: brew install --cask temurin@25; Linux: your package manager or sdkman), then run this again."
   fi
 fi
 echo "Using JDK: ${JAVA_HOME:-java on PATH}"
@@ -171,6 +171,6 @@ if [ "$INTERRUPTED" = 1 ] || [ "$rc" -eq 0 ] || [ "$rc" -eq 130 ] || [ "$rc" -eq
   echo "Application stopped. Run ./stop-local.sh to stop MySQL, Redis and RabbitMQ."
 else
   echo "[ERROR] The application exited with code $rc. See the log above." >&2
-  echo "        Common causes: wrong JDK (need 21), a port taken after the check, or Docker services stopped." >&2
+  echo "        Common causes: wrong JDK (need 25), a port taken after the check, or Docker services stopped." >&2
   exit "$rc"
 fi

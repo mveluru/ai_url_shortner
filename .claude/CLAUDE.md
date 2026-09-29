@@ -1,6 +1,6 @@
 # URL Shortener — project context (read first)
 
-Java 21 · Spring Boot 3.3 · MySQL 8.4 (`utf8mb4_bin` codes) · Redis 7 · RabbitMQ 3.13 · Resilience4j · Flyway. Single deployable, three packages
+Java 25 · Spring Boot 3.5 · MySQL 8.4 (`utf8mb4_bin` codes) · Redis 7 · RabbitMQ 3.13 · Resilience4j · Flyway. Single deployable, three packages
 (`shortener`, `redirect`, `analytics`) — design §20.7. Source of truth: `urldesign/url-shortener-comprehensive-design.md`; contract: `docs/openapi.yaml`.
 
 ## Layout
@@ -9,9 +9,9 @@ tests `src/test` (`*Test` = unit, `*IT` = Docker) · `docs/` · `ops/` · `scrip
 
 ## Run locally (full guide: `README.md` → Setup guide / Starting the application / Manual testing with curl)
 `docker compose up -d` → `./mvnw -pl url-shortener-service spring-boot:run` (default profile `local`; Flyway migrates on startup) → `curl localhost:8080/actuator/health`.
-- **JDK 21 required**; the machine default may be newer — set `JAVA_HOME` before running Maven.
+- **JDK 25 (LTS) required**; this machine's default is JDK 24 (not LTS, deliberately not used) — set `JAVA_HOME` to a JDK 25 install before running Maven. SpotBugs is temporarily skipped on JDK 25 (pom.xml comment): its bytecode analyzer doesn't yet support JDK 25 class files upstream.
 - **Full stop/start of the whole stack** (app + MySQL + Redis + RabbitMQ): README → "Stopping and starting the complete server". Short version — stop: kill whatever is on `:8080`, then `docker compose down`. Start: check `lsof -iTCP:3306 -sTCP:LISTEN` **before** `docker compose up`; if occupied, `docker compose up` fails outright ("Ports are not available"), not a fallback to another port — set `MYSQL_PORT` yourself and export a matching `DB_URL` before starting the app. A missing/wrong `DB_URL` after that surfaces as a misleading `Access denied`, not a connection error, because something else answers on 3306 instead of nothing.
-- **Windows / a teammate with nothing installed:** `run-local.bat` (start) and `stop-local.bat [reset]` in the repo root. They check Docker + JDK 21, reuse running containers or pick free ports, export `DB_URL`/`REDIS_PORT`/`RABBIT_PORT`/`SERVER_PORT`/`PUBLIC_BASE_URL`, then run `mvnw.cmd ... spring-boot:run`. **Not yet executed on Windows** (README limitation L23); say so rather than claiming they work. Never run `stop-local.*` to "clean up" a test: it stops the developer's shared containers.
+- **Windows / a teammate with nothing installed:** `run-local.bat` (start) and `stop-local.bat [reset]` in the repo root. They check Docker + JDK 25, reuse running containers or pick free ports, export `DB_URL`/`REDIS_PORT`/`RABBIT_PORT`/`SERVER_PORT`/`PUBLIC_BASE_URL`, then run `mvnw.cmd ... spring-boot:run`. **Not yet executed on Windows** (README limitation L23); say so rather than claiming they work. Never run `stop-local.*` to "clean up" a test: it stops the developer's shared containers.
 - **Keep them in sync:** if `docker-compose.yml` ports/services or the env vars in `application.yml` change, update `run-local.bat` **and** `run-local.sh`, the README config table and this section together. Host ports in compose are `${VAR:-default}` on purpose (`MYSQL_PORT`, `REDIS_PORT`, `RABBIT_PORT`, `RABBIT_MGMT_PORT`); `REDIS_PORT`/`RABBIT_PORT` are also the names the app reads.
 - `.bat`/`.cmd` files must stay **CRLF** (`.gitattributes` enforces it) and **ASCII**; LF-only labels break `goto`/`call :label`.
 - **macOS/Linux:** `./run-local.sh [--no-open]` and `./stop-local.sh [reset]` do the same as the .bat pair (tested on macOS only; README limitation L24) and already handle the port check above. Manual fallback: see the full stop/start bullet.

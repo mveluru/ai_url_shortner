@@ -5,7 +5,7 @@ rem
 rem    run-local.bat           start MySQL/Redis/RabbitMQ in Docker, then the app
 rem    run-local.bat noopen    same, but do not open Swagger UI in the browser
 rem
-rem  Needs: Docker Desktop (running) and JDK 21. No Maven install needed (mvnw.cmd).
+rem  Needs: Docker Desktop (running) and JDK 25. No Maven install needed (mvnw.cmd).
 rem  Ports are chosen automatically: containers that are already running are
 rem  reused, and anything else that is busy (3306, 6379, 5672, 15672, 8080) is
 rem  moved to the next free port, so this does not clash with software you have.
@@ -31,21 +31,21 @@ if errorlevel 1 (
     goto :fail
 )
 
-rem ---- 2. JDK 21 ---------------------------------------------------------------
+rem ---- 2. JDK 25 ---------------------------------------------------------------
 set "JAVA_CMD=java"
 if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA_CMD=%JAVA_HOME%\bin\java.exe"
 "%JAVA_CMD%" -version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Java was not found. Install JDK 21 and set JAVA_HOME to it, for example:
-    echo         setx JAVA_HOME "C:\Program Files\Eclipse Adoptium\jdk-21..."
+    echo [ERROR] Java was not found. Install JDK 25 and set JAVA_HOME to it, for example:
+    echo         setx JAVA_HOME "C:\Program Files\Eclipse Adoptium\jdk-25..."
     echo         then open a NEW terminal.
     goto :fail
 )
-"%JAVA_CMD%" -version 2>&1 | findstr /R /C:"version .21" >nul
+"%JAVA_CMD%" -version 2>&1 | findstr /R /C:"version .25" >nul
 if errorlevel 1 (
-    echo [ERROR] JDK 21 is required. Java found:
+    echo [ERROR] JDK 25 is required. Java found:
     "%JAVA_CMD%" -version 2>&1 | findstr /C:"version"
-    echo         Install JDK 21 and point JAVA_HOME at it, then open a NEW terminal.
+    echo         Install JDK 25 and point JAVA_HOME at it, then open a NEW terminal.
     goto :fail
 )
 
@@ -115,7 +115,7 @@ call mvnw.cmd -pl url-shortener-service spring-boot:run
 if errorlevel 1 (
     echo.
     echo [ERROR] The application exited with an error. See the log above.
-    echo         Common causes: wrong JDK ^(need 21^), a port taken after the check, or Docker services stopped.
+    echo         Common causes: wrong JDK ^(need 25^), a port taken after the check, or Docker services stopped.
     goto :fail
 )
 echo.
