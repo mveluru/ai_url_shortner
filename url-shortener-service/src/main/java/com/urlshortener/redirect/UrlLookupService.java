@@ -118,19 +118,21 @@ public class UrlLookupService {
 
     private Resolution loadOnMiss(String shortCode, Instant now, Outcome outcome) {
         String token = UUID.randomUUID().toString();
-        Boolean acquired = tryLock(shortCode, token);
-        if (acquired == null) {
-            outcome.cache = "bypass";
-            return loadFromDatabase(shortCode, "bypass", now, false);                    // Redis failed mid-flight
-        }
-        if (acquired) {
-            try {
-                return loadFromDatabase(shortCode, "miss", now, true);
-            } finally {
-                unlockQuietly(shortCode, token);
+        LockOutcome lock = tryLock(shortCode, token);
+        return switch (lock) {
+            case FAILED -> {
+                outcome.cache = "bypass";
+                yield loadFromDatabase(shortCode, "bypass", now, false);              // Redis failed mid-flight
             }
-        }
-        return awaitLockHolder(shortCode, now, outcome);
+            case ACQUIRED -> {
+                try {
+                    yield loadFromDatabase(shortCode, "miss", now, true);
+                } finally {
+                    unlockQuietly(shortCode, token);
+                }
+            }
+            case NOT_ACQUIRED -> awaitLockHolder(shortCode, now, outcome);
+        };
     }
 
     /**
@@ -181,11 +183,14 @@ public class UrlLookupService {
 
     // ---- lock helpers: every Redis failure degrades to "go to the DB", never to an error ------------------------
 
-    private Boolean tryLock(String shortCode, String token) {
+    /** Sealed instead of a nullable Boolean, so every call site must handle all three outcomes explicitly. */
+    private enum LockOutcome { ACQUIRED, NOT_ACQUIRED, FAILED }
+
+    private LockOutcome tryLock(String shortCode, String token) {
         try {
-            return cache.tryLock(shortCode, token);
+            return cache.tryLock(shortCode, token) ? LockOutcome.ACQUIRED : LockOutcome.NOT_ACQUIRED;
         } catch (RuntimeException e) {
-            return null;
+            return LockOutcome.FAILED;
         }
     }
 
