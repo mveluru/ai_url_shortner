@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/service-layer-guardrail.sh\"",
+            "timeout": 180,
+            "statusMessage": "Running layer unit tests + doc guardrail..."
+          }
+        ]
+      }
+    ]
+  }
+}
